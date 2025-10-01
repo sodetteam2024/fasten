@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
 import Carousel from "@/components/Carousel"
 import AnnouncementCard from "@/components/AnnouncementCard"
-import { supabase } from "@/lib/supabaseClient "
+import { supabase } from "@/lib/supabaseClient"
 
 function RedirectTo({ path }) {
   const router = useRouter()
