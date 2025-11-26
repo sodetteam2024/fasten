@@ -6,6 +6,8 @@ import { useEffect, useState } from "react"
 import Carousel from "@/components/Carousel"
 import AnnouncementCard from "@/components/AnnouncementCard"
 import { supabase } from "@/lib/supabaseClient"
+import ButtonA from "@/components/Button"
+import NovedadForm from "@/components/NovedadForm"
 
 function RedirectTo({ path }) {
   const router = useRouter()
@@ -53,6 +55,7 @@ export default function HomePage() {
             <h2 className="text-2xl font-bold mb-6 text-slate-900 text-left">
               Novedades y Anuncios
             </h2>
+            <ButtonA/>
 
             <div className="flex flex-col gap-6">
               {novedades.length > 0 ? (

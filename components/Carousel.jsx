@@ -19,7 +19,7 @@ export default function Carousel() {
         src={slides[current]}
         alt={`slide-${current}`}
         className="h-[360px] w-full object-cover"
-        draggable={false}
+        draggable={false}   
       />
 
       <button

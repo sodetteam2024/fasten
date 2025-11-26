@@ -39,3 +39,15 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+
+# Node / Next
+node_modules
+.next
+
+# Archivos de entorno (NO subir keys)
+.env
+.env.local
+.env.development
+.env.production
+.env.test
