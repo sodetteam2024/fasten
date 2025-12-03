@@ -12,13 +12,13 @@ export default function AnnouncementsSection() {
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [files, setFiles] = useState<File[]>([]);
+  const [files, setFiles] = useState([]); // 👈 sin <File[]>
   const [isActive, setIsActive] = useState(true);
 
-  const [announcements, setAnnouncements] = useState<any[]>([]);
+  const [announcements, setAnnouncements] = useState([]); // 👈 sin <any[]>
 
-  const [perfil, setPerfil] = useState<any>(null);
-  const [roleId, setRoleId] = useState<number | null>(null);
+  const [perfil, setPerfil] = useState(null); // 👈 sin <any>
+  const [roleId, setRoleId] = useState(null); // 👈 sin number | null
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -106,7 +106,7 @@ export default function AnnouncementsSection() {
         }
 
         const mapped =
-          (novedades || []).map((n: any) => ({
+          (novedades || []).map((n) => ({
             id: n.id_novedad,
             title: n.asunto,
             description: n.cuerpo,
@@ -117,7 +117,7 @@ export default function AnnouncementsSection() {
                   n.perfilesusuarios.apellido ?? ""
                 }`.trim() || "Usuario"
               : "Usuario",
-            attachments: (n.novedades_adjuntos || []).map((adj: any) => ({
+            attachments: (n.novedades_adjuntos || []).map((adj) => ({
               id: adj.id_adjunto,
               name: adj.attachment_name,
               path: adj.attachment_path,
@@ -136,7 +136,7 @@ export default function AnnouncementsSection() {
   }, [user]);
 
   // 2️⃣ Adjuntos (máx 4, acumulando entre selecciones)
-  const handleAttachmentChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAttachmentChange = (e) => {
     const selected = Array.from(e.target.files || []);
     if (selected.length === 0) return;
 
@@ -155,12 +155,12 @@ export default function AnnouncementsSection() {
   };
 
   // quitar un archivo individual con la X
-  const handleRemoveFile = (index: number) => {
+  const handleRemoveFile = (index) => {
     setFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
   // 3️⃣ Guardar anuncio + adjuntos en Supabase
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
 
     if (!title.trim() || !description.trim()) return;
@@ -229,7 +229,7 @@ export default function AnnouncementsSection() {
         });
       }
 
-      let adjuntosInsertados: any[] = [];
+      let adjuntosInsertados = [];
 
       if (adjuntosParaInsertar.length > 0) {
         const { data: adjData, error: errAdjuntos } = await supabase
@@ -253,7 +253,7 @@ export default function AnnouncementsSection() {
         createdAt: inserted.fecha,
         estado: inserted.estado,
         userName: currentUserName,
-        attachments: adjuntosInsertados.map((a: any) => ({
+        attachments: adjuntosInsertados.map((a) => ({
           id: a.id_adjunto,
           name: a.attachment_name,
           path: a.attachment_path,
@@ -273,7 +273,7 @@ export default function AnnouncementsSection() {
   };
 
   // 4️⃣ Cambiar estado de un anuncio existente
-  const handleToggleEstado = async (id: number, currentEstado: boolean) => {
+  const handleToggleEstado = async (id, currentEstado) => {
     if (!canManageAnnouncements) return;
 
     try {
@@ -307,13 +307,13 @@ export default function AnnouncementsSection() {
   };
 
   // 5️⃣ Eliminar en front (solo admins/superadmin; solo UI)
-  const handleDelete = (id: number) => {
+  const handleDelete = (id) => {
     if (!canManageAnnouncements) return;
     setAnnouncements((prev) => prev.filter((a) => a.id !== id));
   };
 
   // 6️⃣ Ver adjunto con signed URL
-  const handleViewAttachment = async (path: string) => {
+  const handleViewAttachment = async (path) => {
     try {
       const { data, error } = await supabase.storage
         .from("novedades")
@@ -341,7 +341,7 @@ export default function AnnouncementsSection() {
     setShowForm(false);
   };
 
-  const formatDate = (iso: string) => {
+  const formatDate = (iso) => {
     const d = new Date(iso);
     return d.toLocaleString("es-CO", {
       day: "2-digit",
@@ -555,7 +555,7 @@ export default function AnnouncementsSection() {
               {/* Adjuntos visualizados de forma estándar */}
               {a.attachments && a.attachments.length > 0 && (
                 <div className="mt-2 space-y-1">
-                  {a.attachments.map((att: any) => (
+                  {a.attachments.map((att) => (
                     <div
                       key={att.path}
                       className="flex items-center justify-between rounded-md bg-slate-50 px-3 py-1.5 text-[11px] text-slate-700 border border-slate-200"
