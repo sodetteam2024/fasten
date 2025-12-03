@@ -12,13 +12,13 @@ export default function AnnouncementsSection() {
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [files, setFiles] = useState([]); // 👈 sin <File[]>
+  const [files, setFiles] = useState([]); // adjuntos seleccionados en el form
   const [isActive, setIsActive] = useState(true);
 
-  const [announcements, setAnnouncements] = useState([]); // 👈 sin <any[]>
+  const [announcements, setAnnouncements] = useState([]); // anuncios cargados
 
-  const [perfil, setPerfil] = useState(null); // 👈 sin <any>
-  const [roleId, setRoleId] = useState(null); // 👈 sin number | null
+  const [perfil, setPerfil] = useState(null);
+  const [roleId, setRoleId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -27,7 +27,8 @@ export default function AnnouncementsSection() {
   const currentUserName =
     user?.fullName || user?.username || "Usuario desconocido";
 
-  const canManageAnnouncements = roleId === 1 || roleId === 2; // 1 = SuperAdmin, 2 = Admin
+  // 1 = SuperAdmin, 2 = Admin
+  const canManageAnnouncements = roleId === 1 || roleId === 2;
 
   // 1️⃣ Cargar usuario, rol, perfil y novedades + adjuntos
   useEffect(() => {
@@ -85,7 +86,8 @@ export default function AnnouncementsSection() {
             novedades_adjuntos (
               id_adjunto,
               attachment_path,
-              attachment_name
+              attachment_name,
+              attachment_type
             )
           `
           )
@@ -121,6 +123,7 @@ export default function AnnouncementsSection() {
               id: adj.id_adjunto,
               name: adj.attachment_name,
               path: adj.attachment_path,
+              type: adj.attachment_type,
             })),
           })) ?? [];
 
@@ -140,7 +143,6 @@ export default function AnnouncementsSection() {
     const selected = Array.from(e.target.files || []);
     if (selected.length === 0) return;
 
-    // combinamos lo que ya había + lo nuevo
     let combined = [...files, ...selected];
 
     if (combined.length > 4) {
@@ -149,8 +151,6 @@ export default function AnnouncementsSection() {
     }
 
     setFiles(combined);
-
-    // para permitir volver a seleccionar el mismo archivo
     e.target.value = "";
   };
 
@@ -257,6 +257,7 @@ export default function AnnouncementsSection() {
           id: a.id_adjunto,
           name: a.attachment_name,
           path: a.attachment_path,
+          type: a.attachment_type,
         })),
       };
 
@@ -312,7 +313,7 @@ export default function AnnouncementsSection() {
     setAnnouncements((prev) => prev.filter((a) => a.id !== id));
   };
 
-  // 6️⃣ Ver adjunto con signed URL
+  // 6️⃣ Ver adjunto en nueva pestaña (signed URL)
   const handleViewAttachment = async (path) => {
     try {
       const { data, error } = await supabase.storage
@@ -519,9 +520,7 @@ export default function AnnouncementsSection() {
                       </span>
                       <button
                         type="button"
-                        onClick={() =>
-                          handleToggleEstado(a.id, a.estado)
-                        }
+                        onClick={() => handleToggleEstado(a.id, a.estado)}
                         className={`relative inline-flex h-4 w-8 items-center rounded-full transition ${
                           a.estado ? "bg-emerald-500" : "bg-slate-300"
                         }`}
@@ -535,7 +534,7 @@ export default function AnnouncementsSection() {
                     </div>
                   )}
 
-                  {/* Eliminar solo para admin/superadmin (solo UI por ahora) */}
+                  {/* Eliminar solo UI por ahora */}
                   {canManageAnnouncements && (
                     <button
                       type="button"
@@ -552,27 +551,15 @@ export default function AnnouncementsSection() {
             <div className="space-y-2">
               <p className="text-sm">{a.description}</p>
 
-              {/* Adjuntos visualizados de forma estándar */}
+              {/* Adjuntos visualizados de forma estándar + miniaturas si son imagen */}
               {a.attachments && a.attachments.length > 0 && (
                 <div className="mt-2 space-y-1">
                   {a.attachments.map((att) => (
-                    <div
+                    <AttachmentPreview
                       key={att.path}
-                      className="flex items-center justify-between rounded-md bg-slate-50 px-3 py-1.5 text-[11px] text-slate-700 border border-slate-200"
-                    >
-                      <div className="flex items-center gap-2 min-w-0">
-                        <Paperclip className="h-3 w-3 flex-shrink-0 text-slate-500" />
-                        <span className="truncate">{att.name}</span>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => handleViewAttachment(att.path)}
-                        className="text-[11px] font-semibold text-purple-700 hover:underline flex-shrink-0"
-                      >
-                        Ver
-                      </button>
-                    </div>
+                      attachment={att}
+                      onOpen={handleViewAttachment}
+                    />
                   ))}
                 </div>
               )}
@@ -594,5 +581,71 @@ export default function AnnouncementsSection() {
         )}
       </div>
     </section>
+  );
+}
+
+/**
+ * Componente para mostrar un adjunto con:
+ * - miniatura si es imagen
+ * - nombre del archivo
+ * - botón "Ver" que usa signed URL
+ */
+function AttachmentPreview({ attachment, onOpen }) {
+  const [previewUrl, setPreviewUrl] = useState(null);
+
+  const isImage =
+    attachment.type && typeof attachment.type === "string"
+      ? attachment.type.startsWith("image/")
+      : false;
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadPreview = async () => {
+      if (!isImage) return;
+
+      try {
+        const { data, error } = await supabase.storage
+          .from("novedades")
+          .createSignedUrl(attachment.path, 60 * 30); // 30 minutos
+
+        if (!error && data && isMounted) {
+          setPreviewUrl(data.signedUrl);
+        }
+      } catch (err) {
+        console.error("Error cargando preview de adjunto:", err);
+      }
+    };
+
+    loadPreview();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [attachment.path, isImage]);
+
+  return (
+    <div className="flex items-center justify-between rounded-md bg-slate-50 px-3 py-1.5 text-[11px] text-slate-700 border border-slate-200">
+      <div className="flex items-center gap-2 min-w-0">
+        {isImage && previewUrl ? (
+          <img
+            src={previewUrl}
+            alt={attachment.name}
+            className="h-10 w-10 rounded border border-slate-200 object-cover flex-shrink-0"
+          />
+        ) : (
+          <Paperclip className="h-3 w-3 flex-shrink-0 text-slate-500" />
+        )}
+        <span className="truncate">{attachment.name}</span>
+      </div>
+
+      <button
+        type="button"
+        onClick={() => onOpen(attachment.path)}
+        className="text-[11px] font-semibold text-purple-700 hover:underline flex-shrink-0"
+      >
+        Ver
+      </button>
+    </div>
   );
 }
