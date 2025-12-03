@@ -7,6 +7,7 @@ import {
   Users,
   User,
   Settings,
+  UserCog,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { SignOutButton, useUser } from "@clerk/nextjs";
@@ -202,6 +203,12 @@ export default function Header() {
               <Link href="/visitas">Visitas</Link>
             </li>
           )}
+          {canAdminModule && (
+            <li className="flex items-center gap-2 hover:text-purple-700 transition">
+              <UserCog className="h-4 w-4" />
+              <Link href="/registrarusuario">Administrativo</Link>
+            </li>
+          )}
         </ul>
 
         {/* BOTÓN PERFIL + OPCIONES ADMIN */}
@@ -214,12 +221,6 @@ export default function Header() {
             <span className="text-sm font-semibold">{nombreParaHeader}</span>
           </button>
 
-          {/* Solo superadmin + admin pueden ver registrarusuario */}
-          {canAdminModule && (
-            <Link href="/registrarusuario">
-              <Settings className="w-5 h-5 cursor-pointer text-slate-700 hover:text-purple-700 transition" />
-            </Link>
-          )}
         </div>
       </nav>
 

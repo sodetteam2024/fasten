@@ -14,10 +14,10 @@ export default function Inicio() {
     identifier: "",
     password: "",
   });
+  const [showPassword, setShowPassword] = useState(false); // 👈 NUEVO
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // 🔁 Cuando Clerk diga "ya estás logueado", redirigimos a /inicio
   useEffect(() => {
     if (isSignedIn) {
       router.replace("/inicio");
@@ -32,7 +32,7 @@ export default function Inicio() {
     e.preventDefault();
     setError("");
 
-    if (!isLoaded) return; // Clerk todavía no está listo
+    if (!isLoaded) return;
 
     setIsSubmitting(true);
     try {
@@ -43,8 +43,6 @@ export default function Inicio() {
 
       if (result.status === "complete") {
         await setActive({ session: result.createdSessionId });
-        // 👈 ya no hacemos router.push aquí,
-        // el useEffect de arriba se encarga de redirigir cuando isSignedIn cambie a true
       } else {
         console.log(result);
         setError("Se requiere un paso extra de verificación.");
@@ -76,6 +74,7 @@ export default function Inicio() {
 
         {/* Formulario propio */}
         <form onSubmit={handleSubmit} className="space-y-6 max-w-xl mx-auto">
+          {/* Usuario */}
           <div className="space-y-1">
             <label
               className="text-sm font-semibold text-black"
@@ -95,6 +94,7 @@ export default function Inicio() {
             />
           </div>
 
+          {/* Contraseña con ojito */}
           <div className="space-y-1">
             <label
               className="text-sm font-semibold text-black"
@@ -102,27 +102,28 @@ export default function Inicio() {
             >
               Contraseña
             </label>
-            <input
-              id="password"
-              name="password"
-              type="password"
-              value={form.password}
-              onChange={handleChange}
-              placeholder="Ingresa tu contraseña"
-              className="w-full h-11 rounded-md border border-slate-300 shadow-[0_3px_5px_rgba(0,0,0,0.15)] px-3 text-sm text-black placeholder:text-slate-400 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none"
-              required
-            />
-          </div>
 
-          <div className="flex items-center gap-2">
-            <input
-              id="remember"
-              type="checkbox"
-              className="h-4 w-4 rounded border-slate-400"
-            />
-            <label htmlFor="remember" className="text-sm text-black">
-              Recordar credenciales
-            </label>
+            <div className="relative">
+              <input
+                id="password"
+                name="password"
+                type={showPassword ? "text" : "password"} // 👈 cambia según el estado
+                value={form.password}
+                onChange={handleChange}
+                placeholder="Ingresa tu contraseña"
+                className="w-full h-11 rounded-md border border-slate-300 shadow-[0_3px_5px_rgba(0,0,0,0.15)] px-3 pr-10 text-sm text-black placeholder:text-slate-400 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none"
+                required
+              />
+
+              {/* Botón del ojo */}
+              <button
+                type="button"
+                onClick={() => setShowPassword((prev) => !prev)}
+                className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-500 hover:text-slate-700"
+              >
+                {showPassword ? "🙈" : "👁️"}
+              </button>
+            </div>
           </div>
 
           {error && <p className="text-sm text-red-600">{error}</p>}
