@@ -11,8 +11,8 @@ export default function AnnouncementsSection() {
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [attachment, setAttachment] = useState(null); // { name, url }
-  const [isActive, setIsActive] = useState(true); // 👈 estado del anuncio nuevo
+  const [files, setFiles] = useState([]); // 👈 hasta 4 adjuntos
+  const [isActive, setIsActive] = useState(true);
 
   const [announcements, setAnnouncements] = useState([]);
 
@@ -28,7 +28,7 @@ export default function AnnouncementsSection() {
 
   const canManageAnnouncements = roleId === 1 || roleId === 2; // super admin / admin
 
-  // 1️⃣ Cargar usuario, rol, perfil y novedades
+  // 1️⃣ Cargar usuario, rol, perfil y novedades + adjuntos
   useEffect(() => {
     if (!user) return;
 
@@ -64,7 +64,7 @@ export default function AnnouncementsSection() {
 
         setPerfil(perfilData);
 
-        // novedades de la unidad
+        // novedades de la unidad + perfil + adjuntos
         let novedadesQuery = supabase
           .from("novedades")
           .select(
@@ -77,6 +77,11 @@ export default function AnnouncementsSection() {
             perfilesusuarios (
               nombre,
               apellido
+            ),
+            novedades_adjuntos (
+              id_adjunto,
+              attachment_path,
+              attachment_name
             )
           `
           )
@@ -107,8 +112,11 @@ export default function AnnouncementsSection() {
                 n.perfilesusuarios.apellido ?? ""
               }`.trim() || "Usuario"
             : "Usuario",
-          attachmentName: null,
-          attachmentUrl: null,
+          attachments: (n.novedades_adjuntos || []).map((adj) => ({
+            id: adj.id_adjunto,
+            name: adj.attachment_name,
+            path: adj.attachment_path,
+          })),
         }));
 
         setAnnouncements(mapped);
@@ -122,24 +130,24 @@ export default function AnnouncementsSection() {
     loadData();
   }, [user]);
 
+  // 2️⃣ Adjuntos (máximo 4, frontend only)
   const handleAttachmentChange = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) {
-      if (attachment?.url) URL.revokeObjectURL(attachment.url);
-      setAttachment(null);
+    const selected = Array.from(e.target.files || []);
+
+    if (selected.length === 0) {
+      setFiles([]);
       return;
     }
 
-    if (attachment?.url) URL.revokeObjectURL(attachment.url);
+    const limited = selected.slice(0, 4); // 👈 máx 4
+    if (selected.length > 4) {
+      alert("Solo puedes adjuntar máximo 4 archivos.");
+    }
 
-    const url = URL.createObjectURL(file);
-    setAttachment({
-      name: file.name,
-      url,
-    });
+    setFiles(limited);
   };
 
-  // 2️⃣ Guardar anuncio en Supabase
+  // 3️⃣ Guardar anuncio + adjuntos en Supabase
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -156,7 +164,8 @@ export default function AnnouncementsSection() {
     setSaving(true);
 
     try {
-      const { data: inserted, error } = await supabase
+      // 1) Insertar la novedad
+      const { data: inserted, error: errNovedad } = await supabase
         .from("novedades")
         .insert([
           {
@@ -170,31 +179,76 @@ export default function AnnouncementsSection() {
         .select("id_novedad, fecha, asunto, cuerpo, estado")
         .single();
 
-      if (error) {
-        console.error("Error insertando novedad:", error);
+      if (errNovedad) {
+        console.error("Error insertando novedad:", errNovedad);
         alert("Ocurrió un error al publicar el anuncio.");
         return;
       }
 
-      const nuevo = {
-        id: inserted.id_novedad,
+      const idNovedad = inserted.id_novedad;
+
+      // 2) Subir archivos al bucket "novedades" y preparar filas de adjuntos
+      const adjuntosParaInsertar = [];
+
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const ext = file.name.includes(".")
+          ? file.name.substring(file.name.lastIndexOf(".") + 1)
+          : "";
+        const path = `${perfil.id_unidad}/${idNovedad}/${Date.now()}_${i}${
+          ext ? "." + ext : ""
+        }`;
+
+        const { error: errUpload } = await supabase.storage
+          .from("novedades") // 👈 nombre del bucket en Storage
+          .upload(path, file);
+
+        if (errUpload) {
+          console.error("Error subiendo archivo:", errUpload);
+          continue; // intentamos subir los demás
+        }
+
+        adjuntosParaInsertar.push({
+          id_novedad: idNovedad,
+          attachment_path: path,
+          attachment_name: file.name,
+          attachment_type: file.type,
+          attachment_size: file.size,
+        });
+      }
+
+      if (adjuntosParaInsertar.length > 0) {
+        const { error: errAdjuntos } = await supabase
+          .from("novedades_adjuntos")
+          .insert(adjuntosParaInsertar);
+
+        if (errAdjuntos) {
+          console.error("Error insertando adjuntos:", errAdjuntos);
+        }
+      }
+
+      // 3) Reflejar anuncio en el estado local
+      const nuevoAnuncio = {
+        id: idNovedad,
         title: inserted.asunto,
         description: inserted.cuerpo,
         createdAt: inserted.fecha,
         estado: inserted.estado,
         userName: currentUserName,
-        attachmentName: attachment?.name || null,
-        attachmentUrl: attachment?.url || null,
+        attachments: adjuntosParaInsertar.map((a) => ({
+          id: a.id_adjunto, // aún no tenemos id real, pero no es crítico en front
+          name: a.attachment_name,
+          path: a.attachment_path,
+        })),
       };
 
-      setAnnouncements((prev) => [nuevo, ...prev]);
+      setAnnouncements((prev) => [nuevoAnuncio, ...prev]);
 
-      // reset
+      // 4) Limpiar
       setTitle("");
       setDescription("");
       setIsActive(true);
-      if (attachment?.url) URL.revokeObjectURL(attachment.url);
-      setAttachment(null);
+      setFiles([]);
       setShowForm(false);
     } catch (err) {
       console.error("Error general al publicar anuncio:", err);
@@ -204,7 +258,7 @@ export default function AnnouncementsSection() {
     }
   };
 
-  // 3️⃣ Cambiar estado de un anuncio existente (switch)
+  // 4️⃣ Cambiar estado de un anuncio existente
   const handleToggleEstado = async (id, currentEstado) => {
     if (!canManageAnnouncements) return;
 
@@ -238,20 +292,34 @@ export default function AnnouncementsSection() {
     }
   };
 
-  // 4️⃣ Eliminar (solo front por ahora)
+  // 5️⃣ Eliminar (solo front, sin tocar BD)
   const handleDelete = (id) => {
     if (!canManageAnnouncements) return;
 
-    setAnnouncements((prev) => {
-      const toDelete = prev.find((a) => a.id === id);
-      if (toDelete?.attachmentUrl) {
-        URL.revokeObjectURL(toDelete.attachmentUrl);
-      }
-      return prev.filter((a) => a.id !== id);
-    });
+    setAnnouncements((prev) => prev.filter((a) => a.id !== id));
 
-    // Si quieres borrado lógico en BD:
+    // Si quieres borrado lógico, podrías hacer:
     // supabase.from("novedades").update({ estado: false }).eq("id_novedad", id);
+  };
+
+  // 6️⃣ Obtener URL firmada para ver adjunto
+  const handleViewAttachment = async (path) => {
+    try {
+      const { data, error } = await supabase.storage
+        .from("novedades")
+        .createSignedUrl(path, 60 * 60); // 1 hora
+
+      if (error) {
+        console.error("Error creando signed URL:", error);
+        alert("No se pudo abrir el adjunto.");
+        return;
+      }
+
+      window.open(data.signedUrl, "_blank");
+    } catch (err) {
+      console.error("Error al abrir adjunto:", err);
+      alert("No se pudo abrir el adjunto.");
+    }
   };
 
   const formatDate = (iso) => {
@@ -318,34 +386,29 @@ export default function AnnouncementsSection() {
             />
           </div>
 
-          {/* Adjunto (solo front) */}
+          {/* Adjuntos (máx 4) */}
           <div className="space-y-1">
             <label className="text-xs font-medium text-slate-600">
-              Adjunto (opcional)
+              Adjuntos (máx. 4)
             </label>
             <input
               type="file"
+              multiple
               onChange={handleAttachmentChange}
               className="block w-full text-xs text-slate-700 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-900 file:px-4 file:py-2 file:text-xs file:font-medium file:text-white hover:file:bg-slate-700"
             />
 
-            {attachment && (
-              <div className="mt-1 flex items-center justify-between rounded-lg bg-white px-3 py-1 text-[11px] text-slate-700 border border-slate-200">
-                <span className="truncate">
-                  Archivo seleccionado:{" "}
-                  <span className="font-semibold">{attachment.name}</span>
-                </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    URL.revokeObjectURL(attachment.url);
-                    setAttachment(null);
-                  }}
-                  className="text-[11px] font-semibold text-red-600 hover:underline ml-2"
-                >
-                  Quitar
-                </button>
-              </div>
+            {files.length > 0 && (
+              <ul className="mt-1 space-y-1 rounded-lg bg-white px-3 py-2 text-[11px] text-slate-700 border border-slate-200">
+                {files.map((f, idx) => (
+                  <li key={idx} className="flex justify-between items-center">
+                    <span className="truncate">{f.name}</span>
+                  </li>
+                ))}
+                <p className="text-[10px] text-slate-500 mt-1">
+                  Archivos seleccionados: {files.length} / 4
+                </p>
+              </ul>
             )}
           </div>
 
@@ -460,15 +523,20 @@ export default function AnnouncementsSection() {
             <div className="space-y-2">
               <p className="text-sm">{a.description}</p>
 
-              {a.attachmentName && (
-                <a
-                  href={a.attachmentUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex text-xs font-medium text-purple-700 underline"
-                >
-                  Ver adjunto ({a.attachmentName})
-                </a>
+              {/* Adjuntos */}
+              {a.attachments && a.attachments.length > 0 && (
+                <div className="flex flex-wrap gap-2 mt-1">
+                  {a.attachments.map((att) => (
+                    <button
+                      key={att.path}
+                      type="button"
+                      onClick={() => handleViewAttachment(att.path)}
+                      className="inline-flex text-xs font-medium text-purple-700 underline"
+                    >
+                      Ver adjunto ({att.name})
+                    </button>
+                  ))}
+                </div>
               )}
             </div>
           </AnnouncementCard>
