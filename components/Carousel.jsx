@@ -9,18 +9,15 @@ const MAX_SLIDES = 5;
 export default function Carousel() {
   const { user } = useUser();
 
-  const [slides, setSlides] = useState([]);
+  const [slides, setSlides] = useState([]); // { id, url, path, pending }
   const [current, setCurrent] = useState(0);
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(true);
-
-  // 🔥 Nuevo: para roles
   const [roleId, setRoleId] = useState(null);
 
-  // 🔥 Solo los roles permitidos pueden editar
-  const canEditCarousel = roleId === 1 || roleId === 2;
+  const canEditCarousel = roleId === 1 || roleId === 2; // 1 = SuperAdmin, 2 = Admin
 
-  // 1️⃣ Cargar rol del usuario
+  // 🔹 Cargar rol desde "usuarios"
   useEffect(() => {
     if (!user) return;
 
@@ -39,7 +36,7 @@ export default function Carousel() {
     fetchRole();
   }, [user]);
 
-  // 2️⃣ Cargar slides
+  // 🔹 Cargar slides desde BD + Storage
   useEffect(() => {
     const loadSlides = async () => {
       const { data, error } = await supabase
@@ -48,20 +45,27 @@ export default function Carousel() {
         .order("orden", { ascending: true });
 
       if (error) {
-        console.error(error);
+        console.error("Error cargando carousel_slides:", error);
         setLoading(false);
         return;
       }
 
       const signedSlides = await Promise.all(
-        data.map(async (row) => {
-          const { data: signed } = await supabase.storage
-            .from("carousel")
-            .createSignedUrl(row.image_path, 3600);
+        (data || []).map(async (row) => {
+          const { data: signed, error: errSigned } =
+            await supabase.storage
+              .from("carousel")
+              .createSignedUrl(row.image_path, 3600);
+
+          if (errSigned) {
+            console.error("Error creando signed URL:", errSigned);
+          }
+
           return {
             id: row.id_slide,
             path: row.image_path,
-            url: signed?.signedUrl,
+            url: signed?.signedUrl || "",
+            pending: false,
           };
         })
       );
@@ -73,84 +77,194 @@ export default function Carousel() {
     loadSlides();
   }, []);
 
-  // 3️⃣ Resto de la lógica (prev, next, add, delete) — SIN CAMBIOS
-  const prev = () => slides.length && setCurrent((c) => (c - 1 + slides.length) % slides.length);
-  const next = () => slides.length && setCurrent((c) => (c + 1) % slides.length);
+  const prev = () => {
+    if (!slides.length) return;
+    setCurrent((c) => (c - 1 + slides.length) % slides.length);
+  };
 
-  const handleAddImages = async (e) => {
-    if (!canEditCarousel) return; // 🔥 Bloqueo extra por seguridad
+  const next = () => {
+    if (!slides.length) return;
+    setCurrent((c) => (c + 1) % slides.length);
+  };
+
+  // 🔹 Añadir imágenes (preview inmediato + subida en background)
+  const handleAddImages = (e) => {
+    if (!canEditCarousel) return;
 
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
 
-    const available = MAX_SLIDES - slides.length;
-    const toAdd = files.slice(0, available);
-
-    const baseOrder = slides.length;
-    const newSlides = [];
-
-    for (let i = 0; i < toAdd.length; i++) {
-      const file = toAdd[i];
-      const ext = file.name.split(".").pop();
-      const path = `slides/${Date.now()}_${i}.${ext}`;
-
-      const { error: upErr } = await supabase.storage
-        .from("carousel")
-        .upload(path, file);
-
-      if (upErr) continue;
-
-      const { data: row } = await supabase
-        .from("carousel_slides")
-        .insert({ image_path: path, orden: baseOrder + i })
-        .select()
-        .single();
-
-      const { data: signed } = await supabase.storage
-        .from("carousel")
-        .createSignedUrl(path, 3600);
-
-      newSlides.push({
-        id: row.id_slide,
-        path,
-        url: signed?.signedUrl,
-      });
+    const availableSlots = MAX_SLIDES - slides.length;
+    if (availableSlots <= 0) {
+      alert(`Solo puedes agregar hasta ${MAX_SLIDES} imágenes.`);
+      e.target.value = "";
+      return;
     }
 
-    setSlides((prev) => [...prev, ...newSlides]);
+    const filesToAdd = files.slice(0, availableSlots);
+
+    filesToAdd.forEach((file, index) => {
+      const tempId = `temp-${Date.now()}-${index}`;
+      const previewUrl = URL.createObjectURL(file);
+
+      // 1️⃣ Mostrar preview de una vez
+      setSlides((prev) => [
+        ...prev,
+        {
+          id: tempId,
+          path: null,
+          url: previewUrl,
+          pending: true,
+        },
+      ]);
+
+      // 2️⃣ Subir en background
+      (async () => {
+        try {
+          const ext = file.name.includes(".")
+            ? file.name.substring(file.name.lastIndexOf(".") + 1)
+            : "";
+          const path = `slides/${Date.now()}_${index}${ext ? "." + ext : ""}`;
+
+          const { error: errUpload } = await supabase.storage
+            .from("carousel")
+            .upload(path, file);
+
+          if (errUpload) {
+            console.error("Error subiendo archivo:", errUpload);
+            alert("Error subiendo una imagen al servidor.");
+            // limpiar preview
+            URL.revokeObjectURL(previewUrl);
+            setSlides((prev) => prev.filter((s) => s.id !== tempId));
+            return;
+          }
+
+          const { data: row, error: errInsert } = await supabase
+            .from("carousel_slides")
+            .insert([{ image_path: path }])
+            .select("id_slide")
+            .single();
+
+          if (errInsert || !row) {
+            console.error("Error insertando en carousel_slides:", errInsert);
+            alert("Error guardando la imagen en la base de datos.");
+            // opcional: borrar de storage
+            await supabase.storage.from("carousel").remove([path]);
+            URL.revokeObjectURL(previewUrl);
+            setSlides((prev) => prev.filter((s) => s.id !== tempId));
+            return;
+          }
+
+          const { data: signed, error: errSigned } = await supabase.storage
+            .from("carousel")
+            .createSignedUrl(path, 3600);
+
+          if (errSigned || !signed) {
+            console.error("Error creando signed URL:", errSigned);
+            alert("La imagen se guardó, pero no se pudo mostrar la vista previa.");
+            URL.revokeObjectURL(previewUrl);
+            setSlides((prev) =>
+              prev.map((s) =>
+                s.id === tempId
+                  ? { ...s, id: row.id_slide, path, url: "", pending: false }
+                  : s
+              )
+            );
+            return;
+          }
+
+          // 3️⃣ Reemplazar el slide temporal por el definitivo
+          URL.revokeObjectURL(previewUrl);
+          setSlides((prev) =>
+            prev.map((s) =>
+              s.id === tempId
+                ? {
+                    ...s,
+                    id: row.id_slide,
+                    path,
+                    url: signed.signedUrl,
+                    pending: false,
+                  }
+                : s
+            )
+          );
+        } catch (err) {
+          console.error("Error general subiendo imagen:", err);
+          alert("Error inesperado al subir una imagen.");
+          URL.revokeObjectURL(previewUrl);
+          setSlides((prev) => prev.filter((s) => s.id !== tempId));
+        }
+      })();
+    });
+
+    // permitir volver a elegir los mismos archivos
     e.target.value = "";
   };
 
+  // 🔹 Eliminar imagen (también en Supabase)
   const handleRemoveImage = async (id) => {
     if (!canEditCarousel) return;
 
-    const img = slides.find((s) => s.id === id);
-    if (!img) return;
+    const slide = slides.find((s) => s.id === id);
+    if (!slide) return;
 
-    await supabase.from("carousel_slides").delete().eq("id_slide", id);
-    await supabase.storage.from("carousel").remove([img.path]);
+    // si es un preview local temporal
+    if (!slide.path && slide.url.startsWith("blob:")) {
+      URL.revokeObjectURL(slide.url);
+      setSlides((prev) => prev.filter((s) => s.id !== id));
+      return;
+    }
 
-    setSlides((prev) => prev.filter((s) => s.id !== id));
+    try {
+      // borrar de BD
+      await supabase.from("carousel_slides").delete().eq("id_slide", id);
+      // borrar de storage
+      if (slide.path) {
+        await supabase.storage.from("carousel").remove([slide.path]);
+      }
+    } catch (err) {
+      console.error("Error borrando slide:", err);
+      alert("No se pudo borrar la imagen del servidor.");
+      return;
+    }
+
+    setSlides((prev) => {
+      const indexToRemove = prev.findIndex((s) => s.id === id);
+      if (indexToRemove === -1) return prev;
+
+      const newSlides = prev.filter((s) => s.id !== id);
+
+      if (!newSlides.length) {
+        setCurrent(0);
+      } else if (indexToRemove <= current) {
+        setCurrent((c) => (c === 0 ? 0 : c - 1));
+      }
+
+      return newSlides;
+    });
   };
 
-  // 4️⃣ UI
+  // 🔹 UI
   return (
     <div className="w-full">
-      {/* === PANEL DE EDICIÓN SOLO ADMIN/SUPERADMIN === */}
+      {/* Panel de edición (solo Admin / SuperAdmin) */}
       {isEditing && canEditCarousel && (
         <div className="mb-4 rounded-2xl border border-slate-200 bg-white/90 p-4 shadow">
-          <div className="flex justify-between">
-            <h2 className="text-sm font-semibold">Gestionar imágenes</h2>
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold text-slate-800">
+              Gestionar imágenes del carrusel
+            </h2>
             <button
-              className="text-xs text-slate-500 hover:text-slate-800"
               onClick={() => setIsEditing(false)}
+              className="text-xs font-medium text-slate-500 hover:text-slate-800"
             >
               Cerrar
             </button>
           </div>
 
-          <p className="mt-2 text-xs text-slate-600">
-            Máximo {MAX_SLIDES} imágenes. Actualmente: {slides.length}
+          <p className="text-xs text-slate-600 mb-2">
+            Puedes subir hasta {MAX_SLIDES} imágenes. Actualmente tienes{" "}
+            <span className="font-semibold">{slides.length}</span>.
           </p>
 
           <input
@@ -158,67 +272,84 @@ export default function Carousel() {
             accept="image/*"
             multiple
             onChange={handleAddImages}
-            className="mt-2 w-full text-xs file:bg-slate-900 file:text-white file:px-4 file:py-2 file:rounded-lg"
+            className="block w-full text-xs text-slate-700 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-900 file:px-4 file:py-2 file:text-xs file:font-medium file:text-white hover:file:bg-slate-700"
           />
 
-          {/* Miniaturas */}
-          <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {slides.map((slide, index) => (
-              <div
-                key={slide.id}
-                className="relative border rounded-xl overflow-hidden"
-              >
-                <img
-                  src={slide.url}
-                  alt=""
-                  className="h-24 w-full object-cover"
-                />
-
-                <button
-                  onClick={() => handleRemoveImage(slide.id)}
-                  className="absolute bottom-0 right-0 bg-red-500 text-white text-[10px] px-2 py-[2px] rounded"
+          {/* Thumbnails con X */}
+          {slides.length > 0 ? (
+            <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {slides.map((slide, index) => (
+                <div
+                  key={slide.id}
+                  className="relative overflow-hidden rounded-xl border border-slate-200"
                 >
-                  Eliminar
-                </button>
-              </div>
-            ))}
-          </div>
+                  {slide.url ? (
+                    <img
+                      src={slide.url}
+                      alt={`miniatura-${index + 1}`}
+                      className="h-24 w-full object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-24 w-full items-center justify-center text-[11px] text-slate-500">
+                      Sin vista previa
+                    </div>
+                  )}
+
+                  {/* X en la esquina */}
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveImage(slide.id)}
+                    className="absolute right-1 top-1 rounded-full bg-red-500 px-1.5 py-[1px] text-[10px] font-semibold text-white hover:bg-red-600"
+                  >
+                    ×
+                  </button>
+
+                  {slide.pending && (
+                    <div className="absolute inset-x-0 bottom-0 bg-black/50 px-2 py-1 text-[10px] text-white text-center">
+                      Subiendo...
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-2 text-xs text-slate-500">
+              Aún no has agregado imágenes. Sube algunas desde tu dispositivo.
+            </p>
+          )}
         </div>
       )}
 
-      {/* === CARRUSEL === */}
-      <div className="relative group overflow-hidden rounded-2xl bg-white shadow">
+      {/* Carrusel */}
+      <div className="group relative w-full overflow-hidden rounded-2xl bg-white shadow">
         {loading ? (
-          <div className="h-[360px] flex items-center justify-center text-sm">
-            Cargando...
+          <div className="flex h-[360px] items-center justify-center text-sm text-slate-500">
+            Cargando carrusel...
           </div>
-        ) : slides.length === 0 ? (
-          <div className="h-[360px] flex flex-col items-center justify-center text-sm">
-            No hay imágenes
-            {canEditCarousel && (
-              <button
-                className="mt-3 px-4 py-2 bg-slate-900 text-white text-xs rounded"
-                onClick={() => setIsEditing(true)}
-              >
-                Agregar imágenes
-              </button>
-            )}
-          </div>
-        ) : (
+        ) : slides.length > 0 ? (
           <>
-            <img
-              src={slides[current].url}
-              className="h-[360px] w-full object-cover group-hover:brightness-75 group-hover:blur-sm transition"
-            />
+            {slides[current]?.url ? (
+              <img
+                src={slides[current].url}
+                alt={`slide-${current}`}
+                className="h-[360px] w-full object-cover transition duration-300 group-hover:blur-sm group-hover:brightness-75"
+                draggable={false}
+              />
+            ) : (
+              <div className="flex h-[360px] items-center justify-center text-sm text-slate-500">
+                Imagen sin vista previa
+              </div>
+            )}
 
-            {/* Botón editar: visible SOLO para admin/superadmin */}
+            {/* Botón de editar (solo Admin / SuperAdmin) */}
             {canEditCarousel && (
               <button
+                type="button"
                 onClick={() => setIsEditing(true)}
-                className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition"
+                className="pointer-events-auto absolute inset-0 flex items-center justify-center opacity-0 transition group-hover:opacity-100"
               >
-                <div className="bg-white/85 px-4 py-2 rounded-full shadow text-xs">
-                  Modificar imágenes
+                <div className="flex items-center gap-2 rounded-full bg-white/85 px-4 py-2 text-xs font-medium text-slate-800 shadow-lg backdrop-blur">
+                  <span>Modificar imágenes</span>
                 </div>
               </button>
             )}
@@ -228,19 +359,34 @@ export default function Carousel() {
               <>
                 <button
                   onClick={prev}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 bg-white/80 p-2 rounded-full"
+                  aria-label="Anterior"
+                  className="absolute left-3 top-1/2 -translate-y-1/2 rounded-full bg-white/80 p-2 backdrop-blur hover:bg-white"
                 >
                   ‹
                 </button>
                 <button
                   onClick={next}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 bg-white/80 p-2 rounded-full"
+                  aria-label="Siguiente"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-white/80 p-2 backdrop-blur hover:bg-white"
                 >
                   ›
                 </button>
               </>
             )}
           </>
+        ) : (
+          <div className="flex h-[360px] w-full flex-col items-center justify-center gap-2 bg-slate-50 text-center text-sm text-slate-500">
+            <p>No hay imágenes en el carrusel.</p>
+            {canEditCarousel && (
+              <button
+                type="button"
+                onClick={() => setIsEditing(true)}
+                className="mt-2 rounded-full bg-slate-900 px-4 py-2 text-xs font-medium text-white hover:bg-slate-700"
+              >
+                Agregar imágenes
+              </button>
+            )}
+          </div>
         )}
       </div>
     </div>
