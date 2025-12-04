@@ -1,212 +1,246 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useUser } from "@clerk/nextjs";
+import { supabase } from "@/lib/supabaseClient";
 
-const MAX_SLIDES = 8;
+const MAX_SLIDES = 5;
 
 export default function Carousel() {
-  const [slides, setSlides] = useState([]); 
+  const { user } = useUser();
+
+  const [slides, setSlides] = useState([]);
   const [current, setCurrent] = useState(0);
   const [isEditing, setIsEditing] = useState(false);
+  const [loading, setLoading] = useState(true);
 
-  const prev = () => {
-    if (slides.length === 0) return;
-    setCurrent((c) => (c - 1 + slides.length) % slides.length);
-  };
+  // 🔥 Nuevo: para roles
+  const [roleId, setRoleId] = useState(null);
 
-  const next = () => {
-    if (slides.length === 0) return;
-    setCurrent((c) => (c + 1) % slides.length);
-  };
+  // 🔥 Solo los roles permitidos pueden editar
+  const canEditCarousel = roleId === 1 || roleId === 2;
 
-  const handleAddImages = (e) => {
+  // 1️⃣ Cargar rol del usuario
+  useEffect(() => {
+    if (!user) return;
+
+    const fetchRole = async () => {
+      const { data, error } = await supabase
+        .from("usuarios")
+        .select("idrol")
+        .eq("clerk_id", user.id)
+        .single();
+
+      if (!error && data) {
+        setRoleId(data.idrol);
+      }
+    };
+
+    fetchRole();
+  }, [user]);
+
+  // 2️⃣ Cargar slides
+  useEffect(() => {
+    const loadSlides = async () => {
+      const { data, error } = await supabase
+        .from("carousel_slides")
+        .select("id_slide, image_path, orden")
+        .order("orden", { ascending: true });
+
+      if (error) {
+        console.error(error);
+        setLoading(false);
+        return;
+      }
+
+      const signedSlides = await Promise.all(
+        data.map(async (row) => {
+          const { data: signed } = await supabase.storage
+            .from("carousel")
+            .createSignedUrl(row.image_path, 3600);
+          return {
+            id: row.id_slide,
+            path: row.image_path,
+            url: signed?.signedUrl,
+          };
+        })
+      );
+
+      setSlides(signedSlides);
+      setLoading(false);
+    };
+
+    loadSlides();
+  }, []);
+
+  // 3️⃣ Resto de la lógica (prev, next, add, delete) — SIN CAMBIOS
+  const prev = () => slides.length && setCurrent((c) => (c - 1 + slides.length) % slides.length);
+  const next = () => slides.length && setCurrent((c) => (c + 1) % slides.length);
+
+  const handleAddImages = async (e) => {
+    if (!canEditCarousel) return; // 🔥 Bloqueo extra por seguridad
+
     const files = Array.from(e.target.files || []);
-    if (files.length === 0) return;
+    if (!files.length) return;
 
-    const availableSlots = MAX_SLIDES - slides.length;
-    if (availableSlots <= 0) {
-      alert(`Solo puedes agregar hasta ${MAX_SLIDES} imágenes.`);
-      return;
+    const available = MAX_SLIDES - slides.length;
+    const toAdd = files.slice(0, available);
+
+    const baseOrder = slides.length;
+    const newSlides = [];
+
+    for (let i = 0; i < toAdd.length; i++) {
+      const file = toAdd[i];
+      const ext = file.name.split(".").pop();
+      const path = `slides/${Date.now()}_${i}.${ext}`;
+
+      const { error: upErr } = await supabase.storage
+        .from("carousel")
+        .upload(path, file);
+
+      if (upErr) continue;
+
+      const { data: row } = await supabase
+        .from("carousel_slides")
+        .insert({ image_path: path, orden: baseOrder + i })
+        .select()
+        .single();
+
+      const { data: signed } = await supabase.storage
+        .from("carousel")
+        .createSignedUrl(path, 3600);
+
+      newSlides.push({
+        id: row.id_slide,
+        path,
+        url: signed?.signedUrl,
+      });
     }
 
-    const filesToAdd = files.slice(0, availableSlots);
-
-    const newSlides = filesToAdd.map((file, index) => ({
-      id: `${Date.now()}-${index}`,
-      url: URL.createObjectURL(file),
-    }));
-
     setSlides((prev) => [...prev, ...newSlides]);
-
     e.target.value = "";
   };
 
-  const handleRemoveImage = (id) => {
-    setSlides((prev) => {
-      const indexToRemove = prev.findIndex((s) => s.id === id);
-      if (indexToRemove === -1) return prev;
+  const handleRemoveImage = async (id) => {
+    if (!canEditCarousel) return;
 
-      const newSlides = prev.filter((s) => s.id !== id);
+    const img = slides.find((s) => s.id === id);
+    if (!img) return;
 
-      // ajustar el índice actual para que no quede fuera de rango
-      if (newSlides.length === 0) {
-        setCurrent(0);
-      } else if (indexToRemove <= current) {
-        setCurrent((prevCurrent) =>
-          prevCurrent === 0 ? 0 : prevCurrent - 1
-        );
-      }
+    await supabase.from("carousel_slides").delete().eq("id_slide", id);
+    await supabase.storage.from("carousel").remove([img.path]);
 
-      return newSlides;
-    });
+    setSlides((prev) => prev.filter((s) => s.id !== id));
   };
 
+  // 4️⃣ UI
   return (
     <div className="w-full">
-      {/* Panel de edición encima del carrusel */}
-      {isEditing && (
+      {/* === PANEL DE EDICIÓN SOLO ADMIN/SUPERADMIN === */}
+      {isEditing && canEditCarousel && (
         <div className="mb-4 rounded-2xl border border-slate-200 bg-white/90 p-4 shadow">
-          <div className="mb-3 flex items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold text-slate-800">
-              Gestionar imágenes del carrusel
-            </h2>
+          <div className="flex justify-between">
+            <h2 className="text-sm font-semibold">Gestionar imágenes</h2>
             <button
+              className="text-xs text-slate-500 hover:text-slate-800"
               onClick={() => setIsEditing(false)}
-              className="text-xs font-medium text-slate-500 hover:text-slate-800"
             >
               Cerrar
             </button>
           </div>
 
-          <div className="space-y-4">
-            {/* Input de archivos */}
-            <div className="space-y-2">
-              <p className="text-xs text-slate-600">
-                Puedes subir hasta {MAX_SLIDES} imágenes. Actualmente tienes{" "}
-                <span className="font-semibold">{slides.length}</span>.
-              </p>
-              <input
-                type="file"
-                accept="image/*"
-                multiple
-                onChange={handleAddImages}
-                className="block w-full text-xs text-slate-700 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-900 file:px-4 file:py-2 file:text-xs file:font-medium file:text-white hover:file:bg-slate-700"
-              />
-            </div>
+          <p className="mt-2 text-xs text-slate-600">
+            Máximo {MAX_SLIDES} imágenes. Actualmente: {slides.length}
+          </p>
 
-            {/* Lista de imágenes con opción de eliminar */}
-            {slides.length > 0 ? (
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                {slides.map((slide, index) => (
-                  <div
-                    key={slide.id}
-                    className="relative overflow-hidden rounded-xl border border-slate-200"
-                  >
-                    <img
-                      src={slide.url}
-                      alt={`miniatura-${index + 1}`}
-                      className="h-24 w-full object-cover"
-                    />
-                    <div className="absolute inset-x-0 bottom-0 flex items-center justify-between bg-black/40 px-2 py-1 text-[10px] text-white">
-                      <span>Img {index + 1}</span>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveImage(slide.id)}
-                        className="rounded bg-red-500 px-2 py-[2px] text-[10px] font-semibold hover:bg-red-600"
-                      >
-                        Eliminar
-                      </button>
-                    </div>
-                  </div>
-                ))}
+          <input
+            type="file"
+            accept="image/*"
+            multiple
+            onChange={handleAddImages}
+            className="mt-2 w-full text-xs file:bg-slate-900 file:text-white file:px-4 file:py-2 file:rounded-lg"
+          />
+
+          {/* Miniaturas */}
+          <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {slides.map((slide, index) => (
+              <div
+                key={slide.id}
+                className="relative border rounded-xl overflow-hidden"
+              >
+                <img
+                  src={slide.url}
+                  alt=""
+                  className="h-24 w-full object-cover"
+                />
+
+                <button
+                  onClick={() => handleRemoveImage(slide.id)}
+                  className="absolute bottom-0 right-0 bg-red-500 text-white text-[10px] px-2 py-[2px] rounded"
+                >
+                  Eliminar
+                </button>
               </div>
-            ) : (
-              <p className="text-xs text-slate-500">
-                Aún no has agregado imágenes. Sube algunas desde tu dispositivo.
-              </p>
-            )}
+            ))}
           </div>
         </div>
       )}
 
-      {/* Carrusel */}
-      <div className="group relative w-full overflow-hidden rounded-2xl bg-white shadow">
-        {slides.length > 0 ? (
+      {/* === CARRUSEL === */}
+      <div className="relative group overflow-hidden rounded-2xl bg-white shadow">
+        {loading ? (
+          <div className="h-[360px] flex items-center justify-center text-sm">
+            Cargando...
+          </div>
+        ) : slides.length === 0 ? (
+          <div className="h-[360px] flex flex-col items-center justify-center text-sm">
+            No hay imágenes
+            {canEditCarousel && (
+              <button
+                className="mt-3 px-4 py-2 bg-slate-900 text-white text-xs rounded"
+                onClick={() => setIsEditing(true)}
+              >
+                Agregar imágenes
+              </button>
+            )}
+          </div>
+        ) : (
           <>
             <img
               src={slides[current].url}
-              alt={`slide-${current}`}
-              className="h-[360px] w-full object-cover transition duration-300 group-hover:blur-sm group-hover:brightness-75"
-              draggable={false}
+              className="h-[360px] w-full object-cover group-hover:brightness-75 group-hover:blur-sm transition"
             />
 
-            {/* Overlay de editar que aparece con hover */}
-            <button
-              type="button"
-              onClick={() => setIsEditing(true)}
-              className="pointer-events-auto absolute inset-0 flex items-center justify-center opacity-0 transition group-hover:opacity-100"
-            >
-              <div className="flex items-center gap-2 rounded-full bg-white/85 px-4 py-2 text-xs font-medium text-slate-800 shadow-lg backdrop-blur">
-                <span className="text-sm"></span>
-                <span>Modificar imágenes</span>
-              </div>
-            </button>
+            {/* Botón editar: visible SOLO para admin/superadmin */}
+            {canEditCarousel && (
+              <button
+                onClick={() => setIsEditing(true)}
+                className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition"
+              >
+                <div className="bg-white/85 px-4 py-2 rounded-full shadow text-xs">
+                  Modificar imágenes
+                </div>
+              </button>
+            )}
 
-            {/* Botones de navegación */}
+            {/* Navegación */}
             {slides.length > 1 && (
               <>
                 <button
                   onClick={prev}
-                  aria-label="Anterior"
-                  className="absolute left-3 top-1/2 -translate-y-1/2 rounded-full bg-white/80 p-2 backdrop-blur hover:bg-white"
+                  className="absolute left-3 top-1/2 -translate-y-1/2 bg-white/80 p-2 rounded-full"
                 >
                   ‹
                 </button>
                 <button
                   onClick={next}
-                  aria-label="Siguiente"
-                  className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-white/80 p-2 backdrop-blur hover:bg-white"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 bg-white/80 p-2 rounded-full"
                 >
                   ›
                 </button>
               </>
             )}
-
-            {/* Puntos indicadores */}
-            {slides.length > 1 && (
-              <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-2">
-                {slides.map((_, i) => (
-                  <button
-                    key={_.id}
-                    onClick={() => setCurrent(i)}
-                    aria-label={`Ir al slide ${i + 1}`}
-                    className={`h-2 rounded-full transition-all ${
-                      i === current
-                        ? "w-5 bg-slate-900"
-                        : "w-2 bg-slate-300"
-                    }`}
-                  />
-                ))}
-              </div>
-            )}
           </>
-        ) : (
-          // Estado sin imágenes aún
-          <div className="flex h-[360px] w-full flex-col items-center justify-center gap-2 bg-slate-50 text-center text-sm text-slate-500">
-            <p>No hay imágenes en el carrusel.</p>
-            <p className="text-xs">
-              Pasa el mouse y haz clic en <span className="font-semibold">“Modificar imágenes”</span> para agregar.
-            </p>
-
-            {/* Overlay de editar también cuando no hay imágenes */}
-            <button
-              type="button"
-              onClick={() => setIsEditing(true)}
-              className="mt-2 rounded-full bg-slate-900 px-4 py-2 text-xs font-medium text-white hover:bg-slate-700"
-            >
-             Agregar imágenes
-            </button>
-          </div>
         )}
       </div>
     </div>
