@@ -206,7 +206,7 @@ export default function Header() {
           {canAdminModule && (
             <li className="flex items-center gap-2 hover:text-purple-700 transition">
               <UserCog className="h-4 w-4" />
-              <Link href="/registrarusuario">Administrativo</Link>
+              <Link href="/administrativo/registrarusuario">Administrativo</Link>
             </li>
           )}
         </ul>
