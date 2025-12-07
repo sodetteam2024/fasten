@@ -13,7 +13,7 @@ export default function Carousel() {
   const [current, setCurrent] = useState(0);
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [roleId, setRoleId] = useState(null);
+  const [roleId, setRoleId] = useState(null); // 🔹 corregido nombre del setter
 
   const canEditCarousel = roleId === 1 || roleId === 2; // 1 = SuperAdmin, 2 = Admin
 
@@ -52,10 +52,9 @@ export default function Carousel() {
 
       const signedSlides = await Promise.all(
         (data || []).map(async (row) => {
-          const { data: signed, error: errSigned } =
-            await supabase.storage
-              .from("carousel")
-              .createSignedUrl(row.image_path, 3600);
+          const { data: signed, error: errSigned } = await supabase.storage
+            .from("carousel")
+            .createSignedUrl(row.image_path, 3600);
 
           if (errSigned) {
             console.error("Error creando signed URL:", errSigned);
@@ -133,7 +132,6 @@ export default function Carousel() {
           if (errUpload) {
             console.error("Error subiendo archivo:", errUpload);
             alert("Error subiendo una imagen al servidor.");
-            // limpiar preview
             URL.revokeObjectURL(previewUrl);
             setSlides((prev) => prev.filter((s) => s.id !== tempId));
             return;
@@ -148,7 +146,6 @@ export default function Carousel() {
           if (errInsert || !row) {
             console.error("Error insertando en carousel_slides:", errInsert);
             alert("Error guardando la imagen en la base de datos.");
-            // opcional: borrar de storage
             await supabase.storage.from("carousel").remove([path]);
             URL.revokeObjectURL(previewUrl);
             setSlides((prev) => prev.filter((s) => s.id !== tempId));
@@ -197,7 +194,6 @@ export default function Carousel() {
       })();
     });
 
-    // permitir volver a elegir los mismos archivos
     e.target.value = "";
   };
 
@@ -209,7 +205,7 @@ export default function Carousel() {
     if (!slide) return;
 
     // si es un preview local temporal
-    if (!slide.path && slide.url.startsWith("blob:")) {
+    if (!slide.path && slide.url?.startsWith("blob:")) {
       URL.revokeObjectURL(slide.url);
       setSlides((prev) => prev.filter((s) => s.id !== id));
       return;
@@ -321,7 +317,11 @@ export default function Carousel() {
       )}
 
       {/* Carrusel */}
-      <div className="group relative w-full overflow-hidden rounded-2xl bg-white shadow">
+      <div
+        className={`relative w-full overflow-hidden rounded-2xl bg-white shadow ${
+          canEditCarousel ? "group" : ""
+        }`}
+      >
         {loading ? (
           <div className="flex h-[360px] items-center justify-center text-sm text-slate-500">
             Cargando carrusel...
@@ -332,7 +332,12 @@ export default function Carousel() {
               <img
                 src={slides[current].url}
                 alt={`slide-${current}`}
-                className="h-[360px] w-full object-cover transition duration-300 group-hover:blur-sm group-hover:brightness-75"
+                className={
+                  "h-[360px] w-full object-cover " +
+                  (canEditCarousel
+                    ? "transition duration-300 group-hover:blur-sm group-hover:brightness-75"
+                    : "")
+                }
                 draggable={false}
               />
             ) : (

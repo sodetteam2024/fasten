@@ -30,6 +30,14 @@ export default function AnnouncementsSection() {
   // 1 = SuperAdmin, 2 = Admin
   const canManageAnnouncements = roleId === 1 || roleId === 2;
 
+  // 🔹 Etiqueta legible según el rol del usuario que está logueado
+  const getRoleLabel = (id) => {
+    if (id === 1) return "Superadministración";
+    if (id === 2) return "Administración";
+    if (id === 3) return "Vigilancia";
+    return "Usuario";
+  };
+
   // 1️⃣ Cargar usuario, rol, perfil y novedades + adjuntos
   useEffect(() => {
     if (!user) return;
@@ -496,13 +504,8 @@ export default function AnnouncementsSection() {
           <AnnouncementCard
             key={a.id}
             icon="calendar"
-            title={a.title}
-            tag={a.estado ? "Activo" : "Inactivo"}
-            tagColor={
-              a.estado
-                ? "bg-emerald-50 text-emerald-700"
-                : "bg-slate-100 text-slate-600"
-            }
+            role={getRoleLabel(roleId)}  // 🔹 Arriba: rol (Administración, Vigilancia...)
+            title={a.title}              // 🔹 Debajo: título en pequeño
             footer={
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span>
