@@ -96,10 +96,7 @@ export default function UsuariosActivos() {
             .from("usuarios")
             .select("id_usuario, nombre_usuario, email, idrol"),
 
-          supabase
-            .from("roles")
-            .select("idrol, nombre_rol")
-            .order("nombre_rol"),
+          supabase.from("roles").select("idrol, nombre_rol").order("nombre_rol"),
 
           supabase
             .from("unidades")
@@ -124,27 +121,25 @@ export default function UsuariosActivos() {
         if (unidadesRes.data) setUnidades(unidadesRes.data);
         if (tiposDocRes.data) setTiposDocumento(tiposDocRes.data);
 
-        // Construir mapa de tipo-dirección
+        // Mapa de tipo-dirección
         const tipodirMap = new Map(
-          (tipoDireccionesRes.data || []).map((td) => [
-            td.id_tipodireccion,
-            td,
-          ])
+          (tipoDireccionesRes.data || []).map((td) => [td.id_tipodireccion, td])
         );
 
         // Direcciones con label formateado
         if (direccionesRes.data) {
-          const dirOpts = direccionesRes.data.map((d) => {
-            const td = tipodirMap.get(d.id_tipodireccion);
-            const label = td
-              ? `${td.descripcion} ${d.grupo} ${td.nombre_grupo} ${d.complemento}`
-              : `${d.grupo} ${d.complemento}`;
-            return {
-              id_direccion: d.id_direccion,
-              id_tipodireccion: d.id_tipodireccion,
-              label,
-            };
-          });
+          const dirOpts =
+            direccionesRes.data.map((d) => {
+              const td = tipodirMap.get(d.id_tipodireccion);
+              const label = td
+                ? `${td.descripcion} ${d.grupo} ${td.nombre_grupo} ${d.complemento}`
+                : `${d.grupo} ${d.complemento}`;
+              return {
+                id_direccion: d.id_direccion,
+                id_tipodireccion: d.id_tipodireccion,
+                label,
+              };
+            }) || [];
           setDirecciones(dirOpts);
         }
 
@@ -437,20 +432,18 @@ export default function UsuariosActivos() {
         </button>
       </div>
 
-      {/* Tabla */}
+      {/* Tabla con scroll interno */}
       <div className="rounded-lg border border-gray-300 overflow-hidden">
-        <div className="overflow-x-auto overflow-y-auto max-h-[450px]">
+        <div className="overflow-x-auto overflow-y-auto max-h-[60vh]">
           <table className="min-w-full text-sm">
             <thead className="bg-gray-100 text-gray-700 sticky top-0 z-10">
               <tr>
-                <th className="px-4 py-2 text-left">Nombre</th>
+                <th className="px-4 py-2 text-left w-64">Nombre</th>
                 <th className="px-4 py-2 text-left">Usuario</th>
                 <th className="px-4 py-2 text-left">Correo</th>
                 <th className="px-4 py-2 text-left">Rol</th>
-                <th className="px-4 py-2 text-left">Unidad</th>
+                <th className="px-4 py-2 text-left w-56">Unidad</th>
                 <th className="px-4 py-2 text-left">Dirección</th>
-                <th className="px-4 py-2 text-left">Teléfono</th>
-                <th className="px-4 py-2 text-left">Documento</th>
                 <th className="px-4 py-2 text-left w-px"></th>
               </tr>
             </thead>
@@ -458,7 +451,7 @@ export default function UsuariosActivos() {
             <tbody className="divide-y divide-gray-200">
               {loading && (
                 <tr>
-                  <td colSpan={9} className="px-4 py-6 text-center">
+                  <td colSpan={7} className="px-4 py-6 text-center">
                     Cargando usuarios...
                   </td>
                 </tr>
@@ -475,12 +468,6 @@ export default function UsuariosActivos() {
                     <td className="px-4 py-2">{u.rol}</td>
                     <td className="px-4 py-2">{u.unidad}</td>
                     <td className="px-4 py-2">{u.direccion}</td>
-                    <td className="px-4 py-2">{u.telefono}</td>
-                    <td className="px-4 py-2">
-                      {u.tipo_documento_nombre
-                        ? `${u.tipo_documento_nombre}: ${u.nro_documento}`
-                        : u.nro_documento}
-                    </td>
                     <td className="px-4 py-2">
                       {isSuperAdmin && (
                         <div className="flex gap-2">
@@ -516,7 +503,7 @@ export default function UsuariosActivos() {
               {!loading && usuarios.length === 0 && (
                 <tr>
                   <td
-                    colSpan={9}
+                    colSpan={7}
                     className="px-4 py-6 text-center text-gray-500"
                   >
                     No hay usuarios registrados.
@@ -531,7 +518,7 @@ export default function UsuariosActivos() {
       {/* MODAL EDICIÓN */}
       {modalOpen && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center">
-          <div className="bg-white rounded-xl p-6 w-full max-w-lg shadow-xl">
+          <div className="bg.white rounded-xl p-6 w-full max-w-lg shadow-xl">
             <div className="flex justify-between mb-4">
               <h3 className="text-lg font-semibold">Editar usuario</h3>
               <button
@@ -663,7 +650,7 @@ export default function UsuariosActivos() {
                     name="id_tipo_documento"
                     value={formData.id_tipo_documento || ""}
                     onChange={handleFormChange}
-                    className="w-full border rounded-lg px-2 py-1 text-sm bg.white"
+                    className="w-full border rounded-lg px-2 py-1 text-sm bg-white"
                   >
                     <option value="">Seleccione tipo</option>
                     {tiposDocumento.map((t) => (

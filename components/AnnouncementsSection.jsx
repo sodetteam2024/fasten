@@ -32,7 +32,7 @@ export default function AnnouncementsSection() {
 
   // 🔹 Etiqueta legible según el rol del usuario que está logueado
   const getRoleLabel = (id) => {
-    if (id === 1) return "Superadministración";
+    if (id === 1) return "Super Admin";
     if (id === 2) return "Administración";
     if (id === 3) return "Vigilancia";
     return "Usuario";
@@ -504,7 +504,7 @@ export default function AnnouncementsSection() {
           <AnnouncementCard
             key={a.id}
             icon="calendar"
-            role={getRoleLabel(roleId)}  // 🔹 Arriba: rol (Administración, Vigilancia...)
+            role={a.role}  // 🔹 Arriba: rol (Administración, Vigilancia...)
             title={a.title}              // 🔹 Debajo: título en pequeño
             footer={
               <div className="flex flex-wrap items-center justify-between gap-2">
