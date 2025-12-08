@@ -14,34 +14,33 @@ import {
 
 import RegistrarUsuarioForm from "@/components/RegistrarUsuarioForm";
 import UsuariosActivos from "@/components/UsuariosActivos";
-import UsuariosBaneados from "@/components/UsuariosBaneados";
 
-export default function AdministrativoPage() {
-  // manejo de la sub-sección de Usuarios
-  const [activeUserSub, setActiveUserSub] = useState("activos");
-  // "activos" | "registrar" | "baneados"
+export default function PanelAdministrativo() {
+  const [activeUserSub, setActiveUserSub] = useState("activos"); 
+  // opciones: "activos" | "registrar" | "baneados"
 
   return (
-    // OJO: esto se renderiza dentro de <main className="container mx-auto px-4"> del RootLayout
-    <div className="min-h-[calc(100vh-64px)] bg-slate-100 px-4 py-6">
-      {/* Contenedor grande redondeado */}
-      <div className="mx-auto max-w-6xl rounded-3xl bg-white shadow-sm border border-slate-200 px-6 py-5 flex gap-6">
-        {/* SIDEBAR IZQUIERDA */}
-        <aside className="w-56 pr-4 border-r border-slate-200">
+    <div className="min-h-[calc(100vh-64px)] bg-[#f5f5f5] px-6 py-8">
+      {/* Layout principal sin tarjeta blanca */}
+      <div className="mx-auto max-w-7xl flex gap-10">
+        
+        {/* SIDEBAR */}
+        <aside className="w-64 pr-6 border-r border-gray-300">
+          
           {/* Buscador */}
-          <div className="mb-5">
+          <div className="mb-6">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
               <input
                 type="text"
                 placeholder="Buscar"
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-9 py-2 text-xs text-slate-700 placeholder:text-slate-400 focus:bg-white focus:border-purple-400 focus:ring-2 focus:ring-purple-100 outline-none"
+                className="w-full rounded-xl border border-gray-300 bg-white px-10 py-2 text-sm placeholder:text-gray-400 focus:ring-2 focus:ring-purple-200 outline-none"
               />
             </div>
           </div>
 
-          {/* MENÚ PRINCIPAL */}
-          <nav className="space-y-6 text-sm text-slate-800">
+          {/* Menú */}
+          <nav className="space-y-6 text-sm text-gray-800">
             {/* Grupo Usuarios */}
             <div>
               <div className="mb-1 flex items-center gap-2 font-semibold">
@@ -49,106 +48,95 @@ export default function AdministrativoPage() {
                 <span>Usuarios</span>
               </div>
 
-              <div className="ml-5 border-l border-slate-200 pl-3 space-y-1 text-xs">
+              <div className="ml-5 border-l border-gray-300 pl-3 space-y-1 text-xs">
+
+                {/* Activos */}
                 <button
-                  type="button"
                   onClick={() => setActiveUserSub("activos")}
                   className={`flex items-center gap-2 ${
                     activeUserSub === "activos"
-                      ? "text-purple-600 font-semibold"
-                      : "text-slate-700 hover:text-purple-600"
+                      ? "text-purple-700 font-semibold"
+                      : "text-gray-700 hover:text-purple-600"
                   }`}
                 >
                   <UserCheck className="h-3 w-3" />
-                  <span>Activos</span>
+                  Activos
                 </button>
 
+                {/* Registrar */}
                 <button
-                  type="button"
                   onClick={() => setActiveUserSub("registrar")}
                   className={`flex items-center gap-2 ${
                     activeUserSub === "registrar"
-                      ? "text-purple-600 font-semibold"
-                      : "text-slate-700 hover:text-purple-600"
+                      ? "text-purple-700 font-semibold"
+                      : "text-gray-700 hover:text-purple-600"
                   }`}
                 >
                   <UserPlus className="h-3 w-3" />
-                  <span>Registrar</span>
+                  Registrar
                 </button>
 
+                {/* Baneados */}
                 <button
-                  type="button"
                   onClick={() => setActiveUserSub("baneados")}
                   className={`flex items-center gap-2 ${
                     activeUserSub === "baneados"
-                      ? "text-purple-600 font-semibold"
-                      : "text-slate-700 hover:text-purple-600"
+                      ? "text-purple-700 font-semibold"
+                      : "text-gray-700 hover:text-purple-600"
                   }`}
                 >
                   <UserX className="h-3 w-3" />
-                  <span>Baneados</span>
+                  Baneados
                 </button>
+
               </div>
             </div>
 
-            {/* Reservas */}
-            <button
-              type="button"
-              className="flex items-center gap-2 text-slate-800 hover:text-purple-600 text-sm"
-            >
+            {/* Secciones adicionales */}
+            <button className="flex items-center gap-2 hover:text-purple-600">
               <CalendarDays className="h-4 w-4" />
-              <span>Reservas</span>
+              Reservas
             </button>
 
-            {/* Pagos */}
-            <button
-              type="button"
-              className="flex items-center gap-2 text-slate-800 hover:text-purple-600 text-sm"
-            >
+            <button className="flex items-center gap-2 hover:text-purple-600">
               <CreditCard className="h-4 w-4" />
-              <span>Pagos</span>
+              Pagos
             </button>
 
-            {/* Visitas */}
-            <button
-              type="button"
-              className="flex items-center gap-2 text-slate-800 hover:text-purple-600 text-sm"
-            >
+            <button className="flex items-center gap-2 hover:text-purple-600">
               <Users className="h-4 w-4" />
-              <span>Visitas</span>
+              Visitas
             </button>
           </nav>
         </aside>
 
         {/* CONTENIDO PRINCIPAL */}
         <main className="flex-1">
-          <h1 className="text-xl font-semibold text-slate-900 mb-5">
+
+          <h1 className="text-2xl font-semibold text-gray-900 mb-6">
             Panel Administrativo
           </h1>
 
-          {/* CONTENIDO DINÁMICO SEGÚN SUBSECCIÓN */}
-          <div className="space-y-4">
+          {/* Render dinámico según selección */}
+          <div>
+
             {activeUserSub === "activos" && (
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <UsuariosActivos />
-              </div>
+              <UsuariosActivos />
             )}
 
             {activeUserSub === "registrar" && (
-              <RegistrarUsuarioForm
-                onSuccess={(data) => {
-                  console.log("Usuario creado:", data);
-                  // Si quieres volver a "activos" al crear:
-                  // setActiveUserSub("activos");
-                }}
-              />
+              <RegistrarUsuarioForm />
             )}
 
             {activeUserSub === "baneados" && (
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <UsuariosBaneados />
+              <div className="rounded-xl bg-white border border-gray-300 p-5 shadow-sm">
+                <p className="font-semibold mb-2">Usuarios baneados</p>
+                <p className="text-gray-600 text-sm">
+                  Aquí aparecerán los usuarios marcados como inactivos/restringidos.
+                </p>
               </div>
             )}
+
           </div>
         </main>
       </div>

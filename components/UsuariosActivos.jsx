@@ -7,11 +7,11 @@ import { Pencil, Ban, Download } from "lucide-react";
 export default function UsuariosActivos() {
   const [usuarios, setUsuarios] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [errorMsg, setErrorMsg] = useState("");
-
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
-  const [editingForm, setEditingForm] = useState({
+
+  // FORM STATE DEL MODAL
+  const [formData, setFormData] = useState({
     nombre: "",
     apellido: "",
     correo: "",
@@ -22,66 +22,43 @@ export default function UsuariosActivos() {
     nro_documento: "",
   });
 
-  // 1) Cargar usuarios desde Supabase
+  // Cargar usuarios
   useEffect(() => {
     const fetchUsuarios = async () => {
       setLoading(true);
-      setErrorMsg("");
-
-      /*
-        OJO: Esta consulta asume que Supabase tiene relaciones configuradas
-        entre:
-        - perfilesusuarios.id_usuario -> usuarios.id_usuario
-        - perfilesusuarios.id_unidad  -> unidades.id_unidad
-        - usuarios.idrol              -> roles.idrol
-
-        Si algún nombre de relación no coincide, ajusta el select().
-      */
 
       const { data, error } = await supabase
         .from("perfilesusuarios")
-        .select(
-          `
+        .select(`
           id_perfil,
           nombre,
           apellido,
           correo,
           telefono,
           nro_documento,
-          id_unidad,
+          unidades (nombre_unidad),
           usuarios (
             id_usuario,
             nombre_usuario,
             email,
-            idrol,
-            roles (
-              nombre_rol
-            )
-          ),
-          unidades (
-            nombre_unidad
+            roles (nombre_rol)
           )
-        `
-        )
-        .order("id_perfil", { ascending: true });
+        `);
 
-      if (error) {
-        console.error("❌ Error cargando usuarios:", error);
-        setErrorMsg("Error al cargar usuarios. Intenta más tarde.");
-      } else {
-        const mapped = (data || []).map((row) => ({
-          id_perfil: row.id_perfil,
-          nombre: row.nombre ?? "",
-          apellido: row.apellido ?? "",
-          correo: row.correo ?? row.usuarios?.email ?? "",
-          telefono: row.telefono ?? "",
-          nro_documento: row.nro_documento ?? "",
-          unidad: row.unidades?.nombre_unidad ?? "",
-          usuario: row.usuarios?.nombre_usuario ?? "",
-          rol: row.usuarios?.roles?.nombre_rol ?? "",
-          id_usuario: row.usuarios?.id_usuario,
-        }));
-        setUsuarios(mapped);
+      if (!error) {
+        setUsuarios(
+          data.map((u) => ({
+            id_perfil: u.id_perfil,
+            nombre: u.nombre,
+            apellido: u.apellido,
+            telefono: u.telefono,
+            correo: u.correo || u.usuarios?.email,
+            usuario: u.usuarios?.nombre_usuario,
+            rol: u.usuarios?.roles?.nombre_rol,
+            unidad: u.unidades?.nombre_unidad,
+            nro_documento: u.nro_documento,
+          }))
+        );
       }
 
       setLoading(false);
@@ -90,47 +67,29 @@ export default function UsuariosActivos() {
     fetchUsuarios();
   }, []);
 
-  // 2) Abrir modal de edición
-  const handleEditClick = (user) => {
-    setEditingUser(user);
-    setEditingForm({
-      nombre: user.nombre,
-      apellido: user.apellido,
-      correo: user.correo,
-      telefono: user.telefono,
-      usuario: user.usuario,
-      rol: user.rol,
-      unidad: user.unidad,
-      nro_documento: user.nro_documento,
-    });
-    setIsModalOpen(true);
+  // Abrir modal
+  const openModal = (u) => {
+    setEditingUser(u);
+    setFormData(u);
+    setModalOpen(true);
   };
 
-  const handleEditingChange = (e) => {
-    const { name, value } = e.target;
-    setEditingForm((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
-  };
-
-  // Por ahora solo cerramos el modal; luego aquí puedes hacer el update en Supabase
-  const handleEditingSubmit = (e) => {
-    e.preventDefault();
-    console.log("Datos editados (por ahora solo en frontend):", editingForm);
-    // TODO: aquí puedes llamar a Supabase para actualizar perfilesusuarios/usuarios
-    setIsModalOpen(false);
-  };
-
-  const handleCloseModal = () => {
-    setIsModalOpen(false);
+  // Cerrar modal
+  const closeModal = () => {
+    setModalOpen(false);
     setEditingUser(null);
   };
 
-  // 3) Exportar CSV
-  const handleExportCsv = () => {
-    if (!usuarios.length) return;
+  // Cambiar valores del formulario
+  const handleChange = (e) => {
+    setFormData((prev) => ({
+      ...prev,
+      [e.target.name]: e.target.value,
+    }));
+  };
 
+  // Exportar CSV
+  const exportCsv = () => {
     const headers = [
       "Nombre",
       "Apellido",
@@ -138,7 +97,7 @@ export default function UsuariosActivos() {
       "Correo",
       "Rol",
       "Unidad",
-      "Teléfono",
+      "Telefono",
       "Documento",
     ];
 
@@ -153,274 +112,209 @@ export default function UsuariosActivos() {
       u.nro_documento,
     ]);
 
-    const csvContent = [
-      headers.join(","),
-      ...rows.map((row) =>
-        row
-          .map((value) =>
-            `"${(value ?? "").toString().replace(/"/g, '""')}"`
-          )
-          .join(",")
-      ),
-    ].join("\n");
+    const csv = 
+      headers.join(",") +
+      "\n" +
+      rows.map((r) => r.join(",")).join("\n");
 
-    const blob = new Blob([csvContent], {
-      type: "text/csv;charset=utf-8;",
-    });
-    const url = URL.createObjectURL(blob);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
 
     const link = document.createElement("a");
-    link.href = url;
-    link.setAttribute("download", "usuarios_activos.csv");
-    document.body.appendChild(link);
+    link.href = URL.createObjectURL(blob);
+    link.download = "usuarios_activos.csv";
     link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
   };
 
   return (
-    <div>
-      {/* Header de la sección + botón CSV */}
-      <div className="mb-4 flex items-center justify-between gap-2">
-        <h2 className="text-lg font-semibold text-slate-800">
-          Usuarios activos
-        </h2>
+    <div className="rounded-xl bg-white shadow-sm border border-gray-300 p-6">
+
+      {/* Header */}
+      <div className="flex justify-between items-center mb-4">
+        <h2 className="text-lg font-semibold">Usuarios activos</h2>
+
         <button
-          type="button"
-          onClick={handleExportCsv}
-          disabled={!usuarios.length}
-          className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50"
+          className="flex items-center gap-2 px-3 py-2 text-xs border rounded-lg hover:bg-gray-100"
+          onClick={exportCsv}
         >
-          <Download className="h-3 w-3" />
+          <Download className="h-4 w-4" />
           Exportar CSV
         </button>
       </div>
 
-      {/* Mensajes de estado */}
-      {loading && (
-        <p className="text-sm text-slate-500">Cargando usuarios...</p>
-      )}
-
-      {errorMsg && !loading && (
-        <p className="text-sm text-red-500">{errorMsg}</p>
-      )}
-
-      {!loading && !errorMsg && !usuarios.length && (
-        <p className="text-sm text-slate-500">
-          No hay usuarios activos registrados.
-        </p>
-      )}
-
-      {/* Tabla de usuarios */}
-      {!loading && !errorMsg && usuarios.length > 0 && (
-        <div className="overflow-x-auto rounded-xl border border-slate-200">
+      {/* Tabla con scroll */}
+      <div className="rounded-lg border border-gray-300 overflow-hidden">
+        <div className="overflow-x-auto overflow-y-auto max-h-[450px]">
           <table className="min-w-full text-sm">
-            <thead className="bg-slate-50 text-slate-600">
+            <thead className="bg-gray-100 text-gray-700 sticky top-0 z-10">
               <tr>
-                <th className="px-3 py-2 text-left font-semibold">Nombre</th>
-                <th className="px-3 py-2 text-left font-semibold">
-                  Usuario
-                </th>
-                <th className="px-3 py-2 text-left font-semibold">Correo</th>
-                <th className="px-3 py-2 text-left font-semibold">Rol</th>
-                <th className="px-3 py-2 text-left font-semibold">Unidad</th>
-                <th className="px-3 py-2 text-left font-semibold">
-                  Teléfono
-                </th>
-                <th className="px-3 py-2 text-left font-semibold">
-                  Documento
-                </th>
-                <th className="px-3 py-2 text-left font-semibold">
-                  Opciones
-                </th>
+                <th className="px-4 py-2 text-left">Nombre</th>
+                <th className="px-4 py-2 text-left">Usuario</th>
+                <th className="px-4 py-2 text-left">Correo</th>
+                <th className="px-4 py-2 text-left">Rol</th>
+                <th className="px-4 py-2 text-left">Unidad</th>
+                <th className="px-4 py-2 text-left">Teléfono</th>
+                <th className="px-4 py-2 text-left">Documento</th>
+                <th className="px-4 py-2 text-left">Opciones</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
-              {usuarios.map((u) => (
-                <tr key={u.id_perfil}>
-                  <td className="px-3 py-2">
-                    {u.nombre} {u.apellido}
-                  </td>
-                  <td className="px-3 py-2">{u.usuario}</td>
-                  <td className="px-3 py-2">{u.correo}</td>
-                  <td className="px-3 py-2">{u.rol}</td>
-                  <td className="px-3 py-2">{u.unidad}</td>
-                  <td className="px-3 py-2">{u.telefono}</td>
-                  <td className="px-3 py-2">{u.nro_documento}</td>
-                  <td className="px-3 py-2">
-                    <div className="flex items-center gap-2">
-                      {/* EDITAR */}
-                      <button
-                        type="button"
-                        onClick={() => handleEditClick(u)}
-                        className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 hover:bg-slate-50"
-                      >
-                        <Pencil className="h-3 w-3" />
-                        Editar
-                      </button>
 
-                      {/* BANEAR (no funcional aún) */}
-                      <button
-                        type="button"
-                        className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-600 hover:bg-red-100"
-                      >
-                        <Ban className="h-3 w-3" />
-                        Banear
-                      </button>
-                    </div>
+            <tbody className="divide-y divide-gray-200">
+              {loading && (
+                <tr>
+                  <td colSpan="8" className="px-4 py-6 text-center">
+                    Cargando usuarios...
                   </td>
                 </tr>
-              ))}
+              )}
+
+              {!loading &&
+                usuarios.map((u) => (
+                  <tr key={u.id_perfil}>
+                    <td className="px-4 py-2">{u.nombre} {u.apellido}</td>
+                    <td className="px-4 py-2">{u.usuario}</td>
+                    <td className="px-4 py-2">{u.correo}</td>
+                    <td className="px-4 py-2">{u.rol}</td>
+                    <td className="px-4 py-2">{u.unidad}</td>
+                    <td className="px-4 py-2">{u.telefono}</td>
+                    <td className="px-4 py-2">{u.nro_documento}</td>
+
+                    <td className="px-4 py-2">
+                      <div className="flex gap-2">
+
+                        <button
+                          onClick={() => openModal(u)}
+                          className="flex items-center gap-1 text-xs px-2 py-1 border rounded-lg hover:bg-gray-100"
+                        >
+                          <Pencil className="h-3 w-3" />
+                          Editar
+                        </button>
+
+                        <button
+                          className="flex items-center gap-1 text-xs px-2 py-1 border border-red-300 text-red-600 rounded-lg hover:bg-red-100"
+                        >
+                          <Ban className="h-3 w-3" />
+                          Banear
+                        </button>
+
+                      </div>
+                    </td>
+                  </tr>
+                ))}
             </tbody>
           </table>
         </div>
-      )}
+      </div>
 
-      {/* MODAL DE EDICIÓN */}
-      {isModalOpen && editingUser && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
-          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
-            <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-slate-900">
-                Editar usuario
-              </h3>
-              <button
-                type="button"
-                onClick={handleCloseModal}
-                className="text-sm text-slate-500 hover:text-slate-800"
-              >
-                ✕
-              </button>
+      {/* MODAL */}
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center">
+          <div className="bg-white rounded-xl p-6 w-full max-w-lg shadow-xl">
+
+            <div className="flex justify-between mb-4">
+              <h3 className="text-lg font-semibold">Editar usuario</h3>
+              <button onClick={closeModal} className="text-gray-500">✕</button>
             </div>
 
-            <form onSubmit={handleEditingSubmit} className="space-y-4">
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <form className="space-y-4">
+
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">
-                    Nombre
-                  </label>
-                  <input
-                    type="text"
+                  <label className="text-xs text-gray-600">Nombre</label>
+                  <input className="w-full border rounded-lg px-2 py-1"
                     name="nombre"
-                    value={editingForm.nombre}
-                    onChange={handleEditingChange}
-                    className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm focus:border-purple-400 focus:ring-2 focus:ring-purple-100 outline-none"
+                    value={formData.nombre}
+                    onChange={handleChange}
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">
-                    Apellido
-                  </label>
-                  <input
-                    type="text"
+                  <label className="text-xs text-gray-600">Apellido</label>
+                  <input className="w-full border rounded-lg px-2 py-1"
                     name="apellido"
-                    value={editingForm.apellido}
-                    onChange={handleEditingChange}
-                    className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm focus:border-purple-400 focus:ring-2 focus:ring-purple-100 outline-none"
+                    value={formData.apellido}
+                    onChange={handleChange}
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">
-                    Correo
-                  </label>
-                  <input
-                    type="email"
+                  <label className="text-xs text-gray-600">Correo</label>
+                  <input className="w-full border rounded-lg px-2 py-1"
                     name="correo"
-                    value={editingForm.correo}
-                    onChange={handleEditingChange}
-                    className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm focus:border-purple-400 focus:ring-2 focus:ring-purple-100 outline-none"
+                    value={formData.correo}
+                    onChange={handleChange}
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">
-                    Teléfono
-                  </label>
-                  <input
-                    type="text"
+                  <label className="text-xs text-gray-600">Teléfono</label>
+                  <input className="w-full border rounded-lg px-2 py-1"
                     name="telefono"
-                    value={editingForm.telefono}
-                    onChange={handleEditingChange}
-                    className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm focus:border-purple-400 focus:ring-2 focus:ring-purple-100 outline-none"
+                    value={formData.telefono}
+                    onChange={handleChange}
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">
-                    Usuario
-                  </label>
-                  <input
-                    type="text"
+                  <label className="text-xs text-gray-600">Usuario</label>
+                  <input className="w-full border rounded-lg px-2 py-1"
                     name="usuario"
-                    value={editingForm.usuario}
-                    onChange={handleEditingChange}
-                    className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm focus:border-purple-400 focus:ring-2 focus:ring-purple-100 outline-none"
+                    value={formData.usuario}
+                    onChange={handleChange}
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">
-                    Documento
-                  </label>
-                  <input
-                    type="text"
+                  <label className="text-xs text-gray-600">Documento</label>
+                  <input className="w-full border rounded-lg px-2 py-1"
                     name="nro_documento"
-                    value={editingForm.nro_documento}
-                    onChange={handleEditingChange}
-                    className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm focus:border-purple-400 focus:ring-2 focus:ring-purple-100 outline-none"
+                    value={formData.nro_documento}
+                    onChange={handleChange}
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">
-                    Rol (texto por ahora)
-                  </label>
-                  <input
-                    type="text"
+                  <label className="text-xs text-gray-600">Rol</label>
+                  <input className="w-full border rounded-lg px-2 py-1"
                     name="rol"
-                    value={editingForm.rol}
-                    onChange={handleEditingChange}
-                    className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm focus:border-purple-400 focus:ring-2 focus:ring-purple-100 outline-none"
+                    value={formData.rol}
+                    onChange={handleChange}
                   />
                 </div>
+
                 <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">
-                    Unidad (texto por ahora)
-                  </label>
-                  <input
-                    type="text"
+                  <label className="text-xs text-gray-600">Unidad</label>
+                  <input className="w-full border rounded-lg px-2 py-1"
                     name="unidad"
-                    value={editingForm.unidad}
-                    onChange={handleEditingChange}
-                    className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm focus:border-purple-400 focus:ring-2 focus:ring-purple-100 outline-none"
+                    value={formData.unidad}
+                    onChange={handleChange}
                   />
                 </div>
               </div>
 
-              <div className="mt-4 flex justify-end gap-2">
+              <div className="flex justify-end gap-2 mt-4">
                 <button
+                  onClick={closeModal}
                   type="button"
-                  onClick={handleCloseModal}
-                  className="rounded-lg border border-slate-200 bg-white px-4 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+                  className="px-4 py-2 border rounded-lg text-sm"
                 >
                   Cancelar
                 </button>
+
                 <button
-                  type="submit"
-                  className="rounded-lg bg-purple-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-purple-700"
+                  type="button"
+                  className="px-4 py-2 rounded-lg text-sm bg-purple-600 text-white"
                 >
-                  Guardar cambios (solo UI)
+                  Guardar (pendiente BD)
                 </button>
               </div>
             </form>
+
           </div>
         </div>
       )}
