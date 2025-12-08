@@ -13,10 +13,12 @@ import {
 } from "lucide-react";
 
 import RegistrarUsuarioForm from "@/components/RegistrarUsuarioForm";
+import UsuariosActivos from "@/components/UsuariosActivos";
+import UsuariosBaneados from "@/components/UsuariosBaneados";
 
 export default function PanelAdministrativo() {
   // manejo de la sub-sección de Usuarios
-  const [activeUserSub, setActiveUserSub] = useState("activos"); 
+  const [activeUserSub, setActiveUserSub] = useState("activos");
   // "activos" | "registrar" | "baneados"
 
   return (
@@ -126,34 +128,24 @@ export default function PanelAdministrativo() {
           {/* CONTENIDO DINÁMICO SEGÚN SUBSECCIÓN */}
           <div className="space-y-4">
             {activeUserSub === "activos" && (
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-                {/* Aquí luego montas tu tabla/listado de usuarios activos */}
-                <p className="font-semibold mb-2">Usuarios activos</p>
-                <p>
-                  Aquí puedes listar, filtrar y gestionar los usuarios activos
-                  de la copropiedad.
-                </p>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <UsuariosActivos />
               </div>
             )}
 
             {activeUserSub === "registrar" && (
               <RegistrarUsuarioForm
                 onSuccess={(data) => {
-                  // aquí podrías, por ejemplo, cambiar a "activos" o refrescar algo
                   console.log("Usuario creado:", data);
+                  // Si quieres que al crear vuelva a "activos", descomenta:
                   // setActiveUserSub("activos");
                 }}
               />
             )}
 
             {activeUserSub === "baneados" && (
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-                {/* Aquí luego montas tu listado de usuarios baneados */}
-                <p className="font-semibold mb-2">Usuarios baneados</p>
-                <p>
-                  Aquí puedes consultar y administrar los usuarios que han sido
-                  restringidos del sistema.
-                </p>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <UsuariosBaneados />
               </div>
             )}
           </div>
