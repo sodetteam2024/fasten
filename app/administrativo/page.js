@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import {
   Search,
   Users,
@@ -11,9 +12,12 @@ import {
   UserX,
 } from "lucide-react";
 
+import RegistrarUsuarioForm from "@/components/RegistrarUsuarioForm";
+
 export default function PanelAdministrativo() {
-  // luego puedes manejar aquí el estado de qué sección está activa
-  const activeUserSub = "activos"; // "activos" | "registrar" | "baneados"
+  // manejo de la sub-sección de Usuarios
+  const [activeUserSub, setActiveUserSub] = useState("activos"); 
+  // "activos" | "registrar" | "baneados"
 
   return (
     <div className="min-h-[calc(100vh-64px)] bg-slate-100 px-4 py-6">
@@ -45,6 +49,7 @@ export default function PanelAdministrativo() {
               <div className="ml-5 border-l border-slate-200 pl-3 space-y-1 text-xs">
                 <button
                   type="button"
+                  onClick={() => setActiveUserSub("activos")}
                   className={`flex items-center gap-2 ${
                     activeUserSub === "activos"
                       ? "text-purple-600 font-semibold"
@@ -57,6 +62,7 @@ export default function PanelAdministrativo() {
 
                 <button
                   type="button"
+                  onClick={() => setActiveUserSub("registrar")}
                   className={`flex items-center gap-2 ${
                     activeUserSub === "registrar"
                       ? "text-purple-600 font-semibold"
@@ -69,6 +75,7 @@ export default function PanelAdministrativo() {
 
                 <button
                   type="button"
+                  onClick={() => setActiveUserSub("baneados")}
                   className={`flex items-center gap-2 ${
                     activeUserSub === "baneados"
                       ? "text-purple-600 font-semibold"
@@ -116,25 +123,39 @@ export default function PanelAdministrativo() {
             Panel Administrativo
           </h1>
 
-          {/* BLOQUES “SKELETON” COMO EN TU MOCKUP */}
+          {/* CONTENIDO DINÁMICO SEGÚN SUBSECCIÓN */}
           <div className="space-y-4">
-            {/* barra grande arriba */}
-            <div className="h-10 w-full rounded-2xl bg-slate-100" />
+            {activeUserSub === "activos" && (
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+                {/* Aquí luego montas tu tabla/listado de usuarios activos */}
+                <p className="font-semibold mb-2">Usuarios activos</p>
+                <p>
+                  Aquí puedes listar, filtrar y gestionar los usuarios activos
+                  de la copropiedad.
+                </p>
+              </div>
+            )}
 
-            {/* bloque grande central */}
-            <div className="h-48 w-full rounded-3xl bg-slate-100" />
+            {activeUserSub === "registrar" && (
+              <RegistrarUsuarioForm
+                onSuccess={(data) => {
+                  // aquí podrías, por ejemplo, cambiar a "activos" o refrescar algo
+                  console.log("Usuario creado:", data);
+                  // setActiveUserSub("activos");
+                }}
+              />
+            )}
 
-            {/* dos bloques medianos */}
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <div className="h-10 rounded-2xl bg-slate-100" />
-              <div className="h-10 rounded-2xl bg-slate-100" />
-            </div>
-
-            {/* dos bloques largos abajo */}
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <div className="h-10 rounded-2xl bg-slate-100" />
-              <div className="h-10 rounded-2xl bg-slate-100" />
-            </div>
+            {activeUserSub === "baneados" && (
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+                {/* Aquí luego montas tu listado de usuarios baneados */}
+                <p className="font-semibold mb-2">Usuarios baneados</p>
+                <p>
+                  Aquí puedes consultar y administrar los usuarios que han sido
+                  restringidos del sistema.
+                </p>
+              </div>
+            )}
           </div>
         </main>
       </div>
