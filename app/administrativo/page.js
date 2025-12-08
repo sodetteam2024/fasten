@@ -13,13 +13,16 @@ import {
 } from "lucide-react";
 
 import RegistrarUsuarioForm from "@/components/RegistrarUsuarioForm";
+import UsuariosActivos from "@/components/UsuariosActivos";
+import UsuariosBaneados from "@/components/UsuariosBaneados";
 
-export default function PanelAdministrativo() {
+export default function AdministrativoPage() {
   // manejo de la sub-sección de Usuarios
-  const [activeUserSub, setActiveUserSub] = useState("activos"); 
+  const [activeUserSub, setActiveUserSub] = useState("activos");
   // "activos" | "registrar" | "baneados"
 
   return (
+    // OJO: esto se renderiza dentro de <main className="container mx-auto px-4"> del RootLayout
     <div className="min-h-[calc(100vh-64px)] bg-slate-100 px-4 py-6">
       {/* Contenedor grande redondeado */}
       <div className="mx-auto max-w-6xl rounded-3xl bg-white shadow-sm border border-slate-200 px-6 py-5 flex gap-6">
@@ -126,34 +129,24 @@ export default function PanelAdministrativo() {
           {/* CONTENIDO DINÁMICO SEGÚN SUBSECCIÓN */}
           <div className="space-y-4">
             {activeUserSub === "activos" && (
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-                {/* Aquí luego montas tu tabla/listado de usuarios activos */}
-                <p className="font-semibold mb-2">Usuarios activos</p>
-                <p>
-                  Aquí puedes listar, filtrar y gestionar los usuarios activos
-                  de la copropiedad.
-                </p>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <UsuariosActivos />
               </div>
             )}
 
             {activeUserSub === "registrar" && (
               <RegistrarUsuarioForm
                 onSuccess={(data) => {
-                  // aquí podrías, por ejemplo, cambiar a "activos" o refrescar algo
                   console.log("Usuario creado:", data);
+                  // Si quieres volver a "activos" al crear:
                   // setActiveUserSub("activos");
                 }}
               />
             )}
 
             {activeUserSub === "baneados" && (
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-                {/* Aquí luego montas tu listado de usuarios baneados */}
-                <p className="font-semibold mb-2">Usuarios baneados</p>
-                <p>
-                  Aquí puedes consultar y administrar los usuarios que han sido
-                  restringidos del sistema.
-                </p>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <UsuariosBaneados />
               </div>
             )}
           </div>
