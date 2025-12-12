@@ -18,7 +18,8 @@ export default function AnnouncementsSection() {
   const [announcements, setAnnouncements] = useState([]); // anuncios cargados
 
   const [perfil, setPerfil] = useState(null);
-  const [roleId, setRoleId] = useState(null);
+  const [roleId, setRoleId] = useState(null);      // rol del usuario logueado
+  const [roleName, setRoleName] = useState("");    // nombre_rol del usuario logueado
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -30,21 +31,13 @@ export default function AnnouncementsSection() {
   // 1 = SuperAdmin, 2 = Admin
   const canManageAnnouncements = roleId === 1 || roleId === 2;
 
-  // 🔹 Etiqueta legible según el rol del usuario que está logueado
-  const getRoleLabel = (id) => {
-    if (id === 1) return "Super Admin";
-    if (id === 2) return "Administración";
-    if (id === 3) return "Vigilancia";
-    return "Usuario";
-  };
-
-  // 1️⃣ Cargar usuario, rol, perfil y novedades + adjuntos
+  // 1️⃣ Cargar usuario, perfil, rol DEL PUBLICADOR y novedades + adjuntos
   useEffect(() => {
     if (!user) return;
 
     const loadData = async () => {
       try {
-        // usuarios: obtener id_usuario + idrol
+        // usuarios: obtener id_usuario + idrol del usuario actual
         const { data: usuario, error: errUsuario } = await supabase
           .from("usuarios")
           .select("id_usuario, idrol")
@@ -59,7 +52,20 @@ export default function AnnouncementsSection() {
 
         setRoleId(usuario.idrol);
 
-        // perfilesusuarios
+        // rol del usuario actual (solo para cuando él publica)
+        if (usuario.idrol) {
+          const { data: rolData, error: errRol } = await supabase
+            .from("roles")
+            .select("nombre_rol")
+            .eq("idrol", usuario.idrol)
+            .single();
+
+          if (!errRol && rolData) {
+            setRoleName(rolData.nombre_rol);
+          }
+        }
+
+        // perfilesusuarios del usuario actual
         const { data: perfilData, error: errPerfil } = await supabase
           .from("perfilesusuarios")
           .select("id_perfil, id_unidad, nombre, apellido")
@@ -77,7 +83,7 @@ export default function AnnouncementsSection() {
 
         setPerfil(perfilData);
 
-        // novedades + perfil + adjuntos
+        // novedades + perfil (con id_usuario) + adjuntos
         let novedadesQuery = supabase
           .from("novedades")
           .select(
@@ -88,6 +94,7 @@ export default function AnnouncementsSection() {
             asunto,
             estado,
             perfilesusuarios (
+              id_usuario,
               nombre,
               apellido
             ),
@@ -115,25 +122,61 @@ export default function AnnouncementsSection() {
           return;
         }
 
+        // 🔹 Obtener todos los id_usuario que publicaron novedades
+        const userIds = Array.from(
+          new Set(
+            (novedades || [])
+              .map((n) => n.perfilesusuarios?.id_usuario)
+              .filter(Boolean)
+          )
+        );
+
+        // 🔹 Mapa id_usuario -> nombre_rol
+        let roleByUserId = {};
+        if (userIds.length > 0) {
+          const { data: usuariosPub, error: errUsuariosPub } = await supabase
+            .from("usuarios")
+            .select("id_usuario, roles ( nombre_rol )")
+            .in("id_usuario", userIds);
+
+          if (errUsuariosPub) {
+            console.error("Error cargando roles de publicadores:", errUsuariosPub);
+          } else if (usuariosPub) {
+            usuariosPub.forEach((u) => {
+              const nombreRol = u.roles?.nombre_rol || "Usuario";
+              roleByUserId[u.id_usuario] = nombreRol;
+            });
+          }
+        }
+
+        // 🔹 Mapear novedades al formato del front
         const mapped =
-          (novedades || []).map((n) => ({
-            id: n.id_novedad,
-            title: n.asunto,
-            description: n.cuerpo,
-            createdAt: n.fecha,
-            estado: n.estado,
-            userName: n.perfilesusuarios
-              ? `${n.perfilesusuarios.nombre ?? ""} ${
-                  n.perfilesusuarios.apellido ?? ""
-                }`.trim() || "Usuario"
-              : "Usuario",
-            attachments: (n.novedades_adjuntos || []).map((adj) => ({
-              id: adj.id_adjunto,
-              name: adj.attachment_name,
-              path: adj.attachment_path,
-              type: adj.attachment_type,
-            })),
-          })) ?? [];
+          (novedades || []).map((n) => {
+            const perfilN = n.perfilesusuarios;
+            const idUsuarioPub = perfilN?.id_usuario;
+            const publisherRole =
+              (idUsuarioPub && roleByUserId[idUsuarioPub]) || "Usuario";
+
+            return {
+              id: n.id_novedad,
+              title: n.asunto,
+              description: n.cuerpo,
+              createdAt: n.fecha,
+              estado: n.estado,
+              userName: perfilN
+                ? `${perfilN.nombre ?? ""} ${
+                    perfilN.apellido ?? ""
+                  }`.trim() || "Usuario"
+                : "Usuario",
+              publisherRole, // 👈 rol fijo del publicador
+              attachments: (n.novedades_adjuntos || []).map((adj) => ({
+                id: adj.id_adjunto,
+                name: adj.attachment_name,
+                path: adj.attachment_path,
+                type: adj.attachment_type,
+              })),
+            };
+          }) ?? [];
 
         setAnnouncements(mapped);
       } catch (e) {
@@ -261,6 +304,7 @@ export default function AnnouncementsSection() {
         createdAt: inserted.fecha,
         estado: inserted.estado,
         userName: currentUserName,
+        publisherRole: roleName || "Usuario", // 👈 rol del que está publicando ahora
         attachments: adjuntosInsertados.map((a) => ({
           id: a.id_adjunto,
           name: a.attachment_name,
@@ -504,8 +548,8 @@ export default function AnnouncementsSection() {
           <AnnouncementCard
             key={a.id}
             icon="calendar"
-            role={a.role}  // 🔹 Arriba: rol (Administración, Vigilancia...)
-            title={a.title}              // 🔹 Debajo: título en pequeño
+            role={a.publisherRole}    // 🔥 Rol FIJO del usuario que publicó
+            title={a.title}           // debajo del rol
             footer={
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span>

@@ -27,10 +27,12 @@ export default function AnnouncementCard({
         </div>
 
         <div className="flex-1">
+          {/* 🔹 Línea principal: rol en negrita */}
           <h3 className="font-semibold leading-tight">
             {role || title}
           </h3>
 
+          {/* 🔹 Debajo: título, más pequeño y sin negrita */}
           {role && title && (
             <p className="text-xs text-slate-600 mt-0.5">
               {title}
@@ -48,6 +50,7 @@ export default function AnnouncementCard({
         </div>
       </div>
 
+      {/* Cuerpo del anuncio */}
       <div className="mt-3 text-slate-700">{children}</div>
 
       {/* Footer (Publicado por..., switch, eliminar, etc.) */}
