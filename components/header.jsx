@@ -141,7 +141,7 @@ export default function Header() {
     rolId === 1 || rolId === 2 || rolId === 3 || rolId === 4;
   const canAdminModule = rolId === 1 || rolId === 2; // superadmin + admin (registrar usuario)
 
-  const esAdmin = rolId === 2;
+  const esAdmin = rolId === 1 || rolId === 2;
   const etiquetaRol = rol?.nombre_rol ? `${rol.nombre_rol}` : "";
 
   // Construcción de dirección visible
