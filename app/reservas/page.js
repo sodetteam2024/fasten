@@ -3,13 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   CalendarDays,
-  CreditCard,
-  MessageSquare,
   Users,
-  Sparkles,
   Calendar,
   Clock,
-  MapPin,
   CheckCircle,
   XCircle,
   Plus,
@@ -54,9 +50,7 @@ function pad2(n) {
   return String(n).padStart(2, "0");
 }
 
-// Convierte "6:00 AM" -> {h:6,m:0} en 24h
 function parse12hTo24(time12h) {
-  // soporta "6:00 AM", "06:00 AM", "6:00PM"
   const t = time12h.trim().toUpperCase().replace(/\s+/g, " ");
   const match = t.match(/^(\d{1,2})(?::(\d{2}))?\s*(AM|PM)$/);
   if (!match) return null;
@@ -70,11 +64,9 @@ function parse12hTo24(time12h) {
   } else {
     if (h !== 12) h += 12;
   }
-
   return { h, m };
 }
 
-// Convierte "HH:MM" -> {h,m}
 function parse24h(time24h) {
   const t = time24h.trim();
   const match = t.match(/^(\d{1,2}):(\d{2})$/);
@@ -85,17 +77,12 @@ function parse24h(time24h) {
   return { h, m };
 }
 
-// Crea un ISO local (sin perder zona) usando Date(year,month,day,h,m)
 function makeLocalISO(dateYYYYMMDD, hh, mm) {
   const [y, mo, d] = dateYYYYMMDD.split("-").map((x) => parseInt(x, 10));
   const dt = new Date(y, mo - 1, d, hh, mm, 0, 0);
   return dt.toISOString();
 }
 
-// Parsea slot tipo:
-// - "6:00 AM - 8:00 AM"
-// - "16:30 - 17:30"
-// Devuelve { startISO, endISO } o null
 function parseSlotToISO(selectedDate, slot) {
   if (!selectedDate || !slot) return null;
 
@@ -104,7 +91,6 @@ function parseSlotToISO(selectedDate, slot) {
 
   const [startRaw, endRaw] = parts;
 
-  // Caso AM/PM
   const s12 = parse12hTo24(startRaw);
   const e12 = parse12hTo24(endRaw);
   if (s12 && e12) {
@@ -114,7 +100,6 @@ function parseSlotToISO(selectedDate, slot) {
     };
   }
 
-  // Caso 24h
   const s24 = parse24h(startRaw);
   const e24 = parse24h(endRaw);
   if (s24 && e24) {
@@ -127,19 +112,8 @@ function parseSlotToISO(selectedDate, slot) {
   return null;
 }
 
-function formatDateEsCO(iso) {
-  const d = new Date(iso);
-  return d.toLocaleString("es-CO", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
 /* =========================================================
-   Mapeo iconos por nombre de área (opcional)
+   Iconos por nombre
 ========================================================= */
 
 function iconForAreaName(nombre) {
@@ -164,19 +138,15 @@ export default function ReservationsPage() {
 
   const [isProfileOpen, setIsProfileOpen] = useState(false);
 
-  // usuario+perfil supabase
   const [usuarioDb, setUsuarioDb] = useState(null); // {id_usuario(uuid), idrol}
-  const [perfilDb, setPerfilDb] = useState(null); // {id_perfil, id_unidad, nombre, apellido, ...}
+  const [perfilDb, setPerfilDb] = useState(null); // {id_perfil, id_unidad, nombre, apellido}
 
-  // Áreas (desde BD)
   const [spaces, setSpaces] = useState([]);
   const [loadingSpaces, setLoadingSpaces] = useState(true);
 
-  // Reservas (desde BD)
   const [reservations, setReservations] = useState([]);
   const [loadingReservations, setLoadingReservations] = useState(true);
 
-  // UI states
   const [showReservationForm, setShowReservationForm] = useState(false);
   const [selectedSpace, setSelectedSpace] = useState(null);
   const [selectedDate, setSelectedDate] = useState("");
@@ -187,6 +157,8 @@ export default function ReservationsPage() {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [customStartTime, setCustomStartTime] = useState("");
   const [customEndTime, setCustomEndTime] = useState("");
+
+  const [savingReservation, setSavingReservation] = useState(false);
 
   const [reservationForm, setReservationForm] = useState({
     guests: "",
@@ -216,7 +188,7 @@ export default function ReservationsPage() {
       setLoadingSpaces(true);
       setLoadingReservations(true);
 
-      // 1) Buscar usuario en tabla usuarios por clerk_id
+      // 1) usuario en tabla usuarios (por clerk_id)
       const { data: usuario, error: errUsuario } = await supabase
         .from("usuarios")
         .select("id_usuario, idrol")
@@ -224,7 +196,11 @@ export default function ReservationsPage() {
         .single();
 
       if (errUsuario || !usuario) {
-        console.error("No se encontró usuario en 'usuarios':", errUsuario);
+        console.error("No se encontró usuario:", errUsuario);
+        setUsuarioDb(null);
+        setPerfilDb(null);
+        setSpaces([]);
+        setReservations([]);
         setLoadingSpaces(false);
         setLoadingReservations(false);
         return;
@@ -232,7 +208,7 @@ export default function ReservationsPage() {
 
       setUsuarioDb(usuario);
 
-      // 2) Perfil (para id_unidad)
+      // 2) perfil (para obtener id_unidad)
       const { data: perfil, error: errPerfil } = await supabase
         .from("perfilesusuarios")
         .select("id_perfil, id_unidad, nombre, apellido")
@@ -240,7 +216,10 @@ export default function ReservationsPage() {
         .single();
 
       if (errPerfil || !perfil) {
-        console.error("No se encontró perfil en 'perfilesusuarios':", errPerfil);
+        console.error("No se encontró perfil:", errPerfil);
+        setPerfilDb(null);
+        setSpaces([]);
+        setReservations([]);
         setLoadingSpaces(false);
         setLoadingReservations(false);
         return;
@@ -248,7 +227,7 @@ export default function ReservationsPage() {
 
       setPerfilDb(perfil);
 
-      // 3) Áreas por unidad
+      // 3) áreas activas por unidad
       const { data: areas, error: errAreas } = await supabase
         .from("areas")
         .select("id, idunidad, nombre, valor_hora, estado, created_at")
@@ -269,7 +248,10 @@ export default function ReservationsPage() {
             description: "Reserva por horario según disponibilidad",
             capacity: "Consultar",
             hours: "Según disponibilidad",
-            price: a.valor_hora > 0 ? `$${a.valor_hora.toLocaleString("es-CO")}/hora` : "Gratuito",
+            price:
+              a.valor_hora > 0
+                ? `$${a.valor_hora.toLocaleString("es-CO")}/hora`
+                : "Gratuito",
             valor_hora: a.valor_hora,
             color: "from-orange-400 to-pink-500",
             timeSlots: [
@@ -287,10 +269,9 @@ export default function ReservationsPage() {
 
         setSpaces(mapped);
       }
-
       setLoadingSpaces(false);
 
-      // 4) Mis reservas (por id_usuario UUID)
+      // 4) mis reservas (por id_usuario UUID)
       const { data: resv, error: errResv } = await supabase
         .from("reservas")
         .select(
@@ -314,32 +295,39 @@ export default function ReservationsPage() {
         setReservations([]);
       } else {
         const mappedRes = (resv || []).map((r) => {
+          const estado = (r.estado || "").toLowerCase();
+
+          const status =
+            estado === "confirmada"
+              ? "confirmed"
+              : estado === "cancelada"
+              ? "cancelled"
+              : estado === "completada"
+              ? "completed"
+              : "pending";
+
+          const timeSlot = `${new Date(r.fecha_ini).toLocaleTimeString("es-CO", {
+            hour: "2-digit",
+            minute: "2-digit",
+          })} - ${new Date(r.fecha_fin).toLocaleTimeString("es-CO", {
+            hour: "2-digit",
+            minute: "2-digit",
+          })}`;
+
           return {
             id: String(r.id),
             spaceId: r.id_area,
             spaceName: r.areas?.nombre || "Área",
             date: new Date(r.fecha_ini).toISOString().slice(0, 10),
-            timeSlot: `${new Date(r.fecha_ini).toLocaleTimeString("es-CO", {
-              hour: "2-digit",
-              minute: "2-digit",
-            })} - ${new Date(r.fecha_fin).toLocaleTimeString("es-CO", {
-              hour: "2-digit",
-              minute: "2-digit",
-            })}`,
-            status:
-              (r.estado || "").toLowerCase() === "confirmada"
-                ? "confirmed"
-                : (r.estado || "").toLowerCase() === "cancelada"
-                ? "cancelled"
-                : (r.estado || "").toLowerCase() === "completada"
-                ? "completed"
-                : "pending",
+            timeSlot,
+            status,
             guests: String(r.num_personas ?? ""),
-            purpose: "", // si luego lo guardas en BD, lo llenamos
+            purpose: "",
             notes: "",
             reservedBy: userName,
-            house: "", // si luego lo quieres desde direcciones/unidad, lo hacemos
-            createdDate: r.created_at ? new Date(r.created_at).toISOString().slice(0, 10) : "",
+            createdDate: r.created_at
+              ? new Date(r.created_at).toISOString().slice(0, 10)
+              : "",
             _raw: r,
           };
         });
@@ -371,6 +359,7 @@ export default function ReservationsPage() {
   ========================================================= */
   const handleReservationSubmit = async (e) => {
     e.preventDefault();
+    if (savingReservation) return;
 
     if (!usuarioDb?.id_usuario) {
       alert("No se pudo identificar el usuario en la base de datos.");
@@ -391,30 +380,68 @@ export default function ReservationsPage() {
 
     const parsed = parseSlotToISO(selectedDate, selectedTimeSlot);
     if (!parsed) {
-      alert("Horario inválido. Selecciona un horario sugerido o usa el personalizado.");
+      alert(
+        "Horario inválido. Selecciona un horario sugerido o usa el personalizado."
+      );
+      return;
+    }
+
+    // validar que fin > inicio
+    if (new Date(parsed.endISO) <= new Date(parsed.startISO)) {
+      alert("La hora de fin debe ser mayor a la hora de inicio.");
       return;
     }
 
     const payload = {
       id_area: selectedSpace.id,
-      id_usuario: usuarioDb.id_usuario, // UUID de tu tabla usuarios
+      id_usuario: usuarioDb.id_usuario,
       fecha_ini: parsed.startISO,
       fecha_fin: parsed.endISO,
-      num_personas: reservationForm.guests ? parseInt(reservationForm.guests, 10) : 0,
-      estado: "Pendiente",
+      num_personas: reservationForm.guests
+        ? Math.max(1, parseInt(reservationForm.guests, 10))
+        : 1,
+      estado: "pendiente", // enum en minúscula
+      // NOTA: purpose/notes no existen en tu tabla reservas. Si los quieres, toca agregar columnas.
     };
 
-    const { data, error } = await supabase.from("reservas").insert([payload]).select().single();
+    setSavingReservation(true);
+
+    const { data, error } = await supabase
+      .from("reservas")
+      .insert([payload])
+      .select("id, id_area, fecha_ini, fecha_fin, num_personas, estado, created_at")
+      .single();
+
+    setSavingReservation(false);
 
     if (error) {
       console.error("Error creando reserva:", error);
 
-      // Si tienes constraint/trigger de anti doble booking, normalmente cae aquí:
-      alert("No se pudo crear la reserva. Ese horario podría estar ocupado o hay un error.");
+      // Mensaje específico para overlap (constraint)
+      const msg = (error.message || "").toLowerCase();
+      if (msg.includes("reservas_no_overlap") || msg.includes("exclude")) {
+        alert("Ese horario ya está reservado para esa área. Elige otro horario.");
+        return;
+      }
+
+      alert("No se pudo crear la reserva. Revisa permisos/políticas y vuelve a intentar.");
       return;
     }
 
-    // refrescar lista
+    // (Opcional) consultar cargo generado por trigger (si valor_hora > 0)
+    // NOTA: esto depende de RLS/policies. Si te da error, simplemente lo ignoramos.
+    let cargoValor = null;
+    try {
+      const { data: cargo } = await supabase
+        .from("cargos")
+        .select("id, valor, estado")
+        .eq("source_type", "reserva")
+        .eq("source_id", data.id)
+        .single();
+
+      if (cargo?.valor != null) cargoValor = cargo.valor;
+    } catch {}
+
     const newReservation = {
       id: String(data.id),
       spaceId: selectedSpace.id,
@@ -422,18 +449,18 @@ export default function ReservationsPage() {
       date: selectedDate,
       timeSlot: selectedTimeSlot,
       status: "pending",
-      guests: reservationForm.guests,
+      guests: String(payload.num_personas),
       purpose: reservationForm.purpose,
       notes: reservationForm.notes,
       reservedBy: userName,
-      house: "",
       createdDate: new Date().toISOString().split("T")[0],
       _raw: data,
+      _cargoValor: cargoValor,
     };
 
     setReservations((prev) => [newReservation, ...prev]);
 
-    // Reset form
+    // reset
     setReservationForm({ guests: "", purpose: "", notes: "" });
     setSelectedSpace(null);
     setSelectedDate("");
@@ -442,7 +469,11 @@ export default function ReservationsPage() {
     setCustomEndTime("");
     setShowReservationForm(false);
 
-    alert("¡Reserva solicitada exitosamente!");
+    if (cargoValor != null) {
+      alert(`¡Reserva creada! Se generó un cargo de $${cargoValor.toLocaleString("es-CO")}.`);
+    } else {
+      alert("¡Reserva solicitada exitosamente!");
+    }
   };
 
   /* =========================================================
@@ -452,29 +483,25 @@ export default function ReservationsPage() {
     const r = reservations.find((x) => x.id === reservationId);
     if (!r?._raw?.id) return;
 
-    if (
-      window.confirm(
-        "¿Estás seguro de que deseas cancelar esta reserva?",
-      )
-    ) {
-      const { error } = await supabase
-        .from("reservas")
-        .update({ estado: "Cancelada" })
-        .eq("id", r._raw.id);
-
-      if (error) {
-        console.error("Error cancelando reserva:", error);
-        alert("No se pudo cancelar la reserva.");
-        return;
-      }
-
-      setReservations((prev) =>
-        prev.map((x) =>
-          x.id === reservationId ? { ...x, status: "cancelled" } : x
-        )
-      );
-      alert("Reserva cancelada exitosamente");
+    if (!window.confirm("¿Estás seguro de que deseas cancelar esta reserva?")) {
+      return;
     }
+
+    const { error } = await supabase
+      .from("reservas")
+      .update({ estado: "cancelada" }) // enum minúscula
+      .eq("id", r._raw.id);
+
+    if (error) {
+      console.error("Error cancelando reserva:", error);
+      alert("No se pudo cancelar la reserva.");
+      return;
+    }
+
+    setReservations((prev) =>
+      prev.map((x) => (x.id === reservationId ? { ...x, status: "cancelled" } : x))
+    );
+    alert("Reserva cancelada exitosamente");
   };
 
   /* =========================================================
@@ -487,7 +514,8 @@ export default function ReservationsPage() {
         (reservation.purpose || "").toLowerCase().includes(searchTerm.toLowerCase());
 
       const matchesStatus = filterStatus === "all" || reservation.status === filterStatus;
-      const matchesSpace = filterSpace === "all" || String(reservation.spaceId) === String(filterSpace);
+      const matchesSpace =
+        filterSpace === "all" || String(reservation.spaceId) === String(filterSpace);
 
       return matchesSearch && matchesStatus && matchesSpace;
     });
@@ -524,19 +552,20 @@ export default function ReservationsPage() {
   };
 
   /* =========================================================
-     Calendario (igual que el tuyo, pero usando reservas reales)
+     Calendario
   ========================================================= */
-  const getDaysInMonth = (date) => new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
-  const getFirstDayOfMonth = (date) => new Date(date.getFullYear(), date.getMonth(), 1).getDay();
+  const getDaysInMonth = (date) =>
+    new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+
+  const getFirstDayOfMonth = (date) =>
+    new Date(date.getFullYear(), date.getMonth(), 1).getDay();
 
   const isDateAvailable = (date) => {
     const today = new Date();
     const checkDate = new Date(date);
-
     if (checkDate < today.setHours(0, 0, 0, 0)) return false;
     if (!selectedSpace) return true;
 
-    // Reservas existentes de esa área y fecha (pendiente/confirmada)
     const existingReservations = reservations.filter(
       (res) =>
         String(res.spaceId) === String(selectedSpace.id) &&
@@ -544,7 +573,6 @@ export default function ReservationsPage() {
         (res.status === "confirmed" || res.status === "pending")
     );
 
-    // Si todos los slots sugeridos están tomados, no disponible
     const totalSlots = selectedSpace.timeSlots?.length || 0;
     if (totalSlots === 0) return true;
 
@@ -605,15 +633,7 @@ export default function ReservationsPage() {
         </button>
       );
     }
-
     return days;
-  };
-
-  /* =========================================================
-     Logout (si ya tienes otro flujo, cámbialo)
-  ========================================================= */
-  const handleLogout = () => {
-    window.location.href = "/"; // Clerk SignOut real lo manejas desde tu Header normalmente
   };
 
   /* =========================================================
@@ -627,7 +647,7 @@ export default function ReservationsPage() {
 
       <SignedIn>
         <div className="min-h-screen relative overflow-hidden bg-gradient-to-br from-orange-50 via-pink-50 to-purple-100">
-          {/* Decorative Background Elements (igual que tu UI) */}
+          {/* Decorative */}
           <div className="absolute inset-0 overflow-hidden pointer-events-none">
             <div className="absolute top-20 left-10 w-32 h-32 bg-gradient-to-r from-pink-300 to-rose-400 rounded-full opacity-20 animate-pulse"></div>
             <div className="absolute top-40 right-20 w-24 h-24 bg-gradient-to-r from-blue-300 to-cyan-400 rounded-full opacity-25 animate-bounce"></div>
@@ -641,60 +661,6 @@ export default function ReservationsPage() {
             ></div>
           </div>
 
-          {/* Profile Sidebar */}
-          <div
-            className={`fixed inset-y-0 right-0 w-80 bg-white/95 backdrop-blur-xl shadow-2xl transform transition-transform duration-300 ease-in-out z-50 border-l ${
-              isProfileOpen ? "translate-x-0" : "translate-x-full"
-            }`}
-          >
-            <div className="p-6 border-b">
-              <div className="flex items-center justify-between">
-                <h2 className="text-lg font-semibold bg-gradient-to-r from-orange-600 to-pink-600 bg-clip-text text-transparent">
-                  Perfil de Usuario
-                </h2>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setIsProfileOpen(false)}
-                >
-                  <X className="h-5 w-5" />
-                </Button>
-              </div>
-            </div>
-
-            <div className="p-6 space-y-6">
-              <div className="text-center">
-                <div className="w-20 h-20 bg-gradient-to-br from-orange-400 via-pink-500 to-purple-600 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg">
-                  <User className="h-10 w-10 text-white" />
-                </div>
-                <h3 className="font-semibold text-slate-900">{userName}</h3>
-              </div>
-
-              <div className="space-y-3">
-                <Button className="w-full bg-gradient-to-r from-orange-500 to-pink-600 text-white">
-                  <Sparkles className="h-4 w-4 mr-2" />
-                  Editar Perfil
-                </Button>
-                <Button
-                  variant="destructive"
-                  className="w-full"
-                  onClick={handleLogout}
-                >
-                  Cerrar Sesión
-                </Button>
-              </div>
-            </div>
-          </div>
-
-          {/* Overlay */}
-          {isProfileOpen && (
-            <div
-              className="fixed inset-0 bg-black/20 backdrop-blur-sm z-40"
-              onClick={() => setIsProfileOpen(false)}
-            />
-          )}
-
-          {/* Main Content */}
           <main className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
             {/* Header */}
             <div className="mb-8 flex items-start justify-between gap-4">
@@ -725,9 +691,7 @@ export default function ReservationsPage() {
 
               {loadingSpaces ? (
                 <Card className="shadow-lg border-0 bg-white/90 backdrop-blur-xl">
-                  <CardContent className="p-8 text-slate-600">
-                    Cargando áreas...
-                  </CardContent>
+                  <CardContent className="p-8 text-slate-600">Cargando áreas...</CardContent>
                 </Card>
               ) : spaces.length === 0 ? (
                 <Card className="shadow-lg border-0 bg-white/90 backdrop-blur-xl">
@@ -750,13 +714,10 @@ export default function ReservationsPage() {
                           >
                             <space.icon className="h-8 w-8 text-white" />
                           </div>
+
                           <div>
-                            <h3 className="text-lg font-semibold text-slate-900 mb-2">
-                              {space.name}
-                            </h3>
-                            <p className="text-sm text-slate-600 mb-3">
-                              {space.description}
-                            </p>
+                            <h3 className="text-lg font-semibold text-slate-900 mb-2">{space.name}</h3>
+                            <p className="text-sm text-slate-600 mb-3">{space.description}</p>
 
                             <div className="space-y-2 text-xs text-slate-500">
                               <div className="flex items-center space-x-2">
@@ -768,16 +729,12 @@ export default function ReservationsPage() {
                                 <span>{space.hours}</span>
                               </div>
                               <div className="flex items-center space-x-2">
-                                <span className="font-medium text-green-600">
-                                  {space.price}
-                                </span>
+                                <span className="font-medium text-green-600">{space.price}</span>
                               </div>
                             </div>
                           </div>
 
-                          <Button
-                            className={`w-full bg-gradient-to-r ${space.color} hover:opacity-90 text-white shadow-lg hover:shadow-xl transition-all duration-300`}
-                          >
+                          <Button className={`w-full bg-gradient-to-r ${space.color} hover:opacity-90 text-white shadow-lg hover:shadow-xl transition-all duration-300`}>
                             <Plus className="h-4 w-4 mr-2" />
                             Reservar
                           </Button>
@@ -821,9 +778,7 @@ export default function ReservationsPage() {
                       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                         {/* Calendar */}
                         <div className="space-y-4">
-                          <h3 className="text-lg font-semibold text-slate-900">
-                            Seleccionar Fecha
-                          </h3>
+                          <h3 className="text-lg font-semibold text-slate-900">Seleccionar Fecha</h3>
 
                           <div className="bg-gradient-to-r from-orange-50 to-pink-50 p-4 rounded-lg">
                             <div className="flex items-center justify-between mb-4">
@@ -832,22 +787,14 @@ export default function ReservationsPage() {
                                 variant="ghost"
                                 size="icon"
                                 onClick={() =>
-                                  setCurrentMonth(
-                                    new Date(
-                                      currentMonth.getFullYear(),
-                                      currentMonth.getMonth() - 1
-                                    )
-                                  )
+                                  setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1))
                                 }
                               >
                                 <ChevronLeft className="h-4 w-4" />
                               </Button>
 
                               <h4 className="font-semibold text-slate-900">
-                                {currentMonth.toLocaleDateString("es-CO", {
-                                  month: "long",
-                                  year: "numeric",
-                                })}
+                                {currentMonth.toLocaleDateString("es-CO", { month: "long", year: "numeric" })}
                               </h4>
 
                               <Button
@@ -855,12 +802,7 @@ export default function ReservationsPage() {
                                 variant="ghost"
                                 size="icon"
                                 onClick={() =>
-                                  setCurrentMonth(
-                                    new Date(
-                                      currentMonth.getFullYear(),
-                                      currentMonth.getMonth() + 1
-                                    )
-                                  )
+                                  setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1))
                                 }
                               >
                                 <ChevronRight className="h-4 w-4" />
@@ -868,36 +810,26 @@ export default function ReservationsPage() {
                             </div>
 
                             <div className="grid grid-cols-7 gap-1 mb-2">
-                              {["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"].map(
-                                (day) => (
-                                  <div
-                                    key={day}
-                                    className="h-8 flex items-center justify-center text-xs font-medium text-slate-600"
-                                  >
-                                    {day}
-                                  </div>
-                                )
-                              )}
+                              {["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"].map((day) => (
+                                <div key={day} className="h-8 flex items-center justify-center text-xs font-medium text-slate-600">
+                                  {day}
+                                </div>
+                              ))}
                             </div>
 
-                            <div className="grid grid-cols-7 gap-1">
-                              {renderCalendar()}
-                            </div>
+                            <div className="grid grid-cols-7 gap-1">{renderCalendar()}</div>
                           </div>
 
                           {selectedDate && (
                             <div className="bg-blue-50 p-3 rounded-lg">
                               <p className="text-sm font-medium text-blue-900">
                                 Fecha seleccionada:{" "}
-                                {new Date(selectedDate + "T00:00:00").toLocaleDateString(
-                                  "es-CO",
-                                  {
-                                    weekday: "long",
-                                    year: "numeric",
-                                    month: "long",
-                                    day: "numeric",
-                                  }
-                                )}
+                                {new Date(selectedDate + "T00:00:00").toLocaleDateString("es-CO", {
+                                  weekday: "long",
+                                  year: "numeric",
+                                  month: "long",
+                                  day: "numeric",
+                                })}
                               </p>
                             </div>
                           )}
@@ -907,24 +839,16 @@ export default function ReservationsPage() {
                         <div className="space-y-4">
                           {selectedDate && (
                             <div>
-                              <h3 className="text-lg font-semibold text-slate-900 mb-3">
-                                Horarios
-                              </h3>
+                              <h3 className="text-lg font-semibold text-slate-900 mb-3">Horarios</h3>
 
-                              {/* Slots sugeridos */}
                               <div className="mb-4">
-                                <h4 className="text-sm font-medium text-slate-700 mb-2">
-                                  Horarios Sugeridos
-                                </h4>
-
+                                <h4 className="text-sm font-medium text-slate-700 mb-2">Horarios Sugeridos</h4>
                                 <div className="grid grid-cols-1 gap-2 max-h-32 overflow-y-auto">
                                   {getAvailableTimeSlots(selectedDate).map((slot) => (
                                     <Button
                                       key={slot}
                                       type="button"
-                                      variant={
-                                        selectedTimeSlot === slot ? "default" : "outline"
-                                      }
+                                      variant={selectedTimeSlot === slot ? "default" : "outline"}
                                       className={`justify-start text-sm ${
                                         selectedTimeSlot === slot
                                           ? "bg-gradient-to-r from-orange-400 to-pink-500 text-white"
@@ -939,17 +863,11 @@ export default function ReservationsPage() {
                                 </div>
                               </div>
 
-                              {/* Personalizado */}
                               <div className="space-y-3">
-                                <h4 className="text-sm font-medium text-slate-700">
-                                  Horario Personalizado
-                                </h4>
-
+                                <h4 className="text-sm font-medium text-slate-700">Horario Personalizado</h4>
                                 <div className="grid grid-cols-2 gap-3">
                                   <div className="space-y-1">
-                                    <Label htmlFor="startTime" className="text-xs">
-                                      Hora de Inicio
-                                    </Label>
+                                    <Label htmlFor="startTime" className="text-xs">Hora de Inicio</Label>
                                     <Input
                                       id="startTime"
                                       type="time"
@@ -959,9 +877,7 @@ export default function ReservationsPage() {
                                     />
                                   </div>
                                   <div className="space-y-1">
-                                    <Label htmlFor="endTime" className="text-xs">
-                                      Hora de Fin
-                                    </Label>
+                                    <Label htmlFor="endTime" className="text-xs">Hora de Fin</Label>
                                     <Input
                                       id="endTime"
                                       type="time"
@@ -977,25 +893,19 @@ export default function ReservationsPage() {
                                     type="button"
                                     variant="outline"
                                     size="sm"
-                                    onClick={() => {
-                                      const customSlot = `${customStartTime} - ${customEndTime}`;
-                                      setSelectedTimeSlot(customSlot);
-                                    }}
+                                    onClick={() => setSelectedTimeSlot(`${customStartTime} - ${customEndTime}`)}
                                     className="w-full border-blue-200 hover:bg-blue-50 text-blue-700"
                                   >
-                                    Usar Horario Personalizado: {customStartTime} -{" "}
-                                    {customEndTime}
+                                    Usar Horario Personalizado: {customStartTime} - {customEndTime}
                                   </Button>
                                 )}
                               </div>
 
-                              {getAvailableTimeSlots(selectedDate).length === 0 &&
-                                !customStartTime && (
-                                  <p className="text-sm text-red-600 bg-red-50 p-3 rounded-lg">
-                                    No hay horarios sugeridos disponibles. Puedes crear un
-                                    horario personalizado.
-                                  </p>
-                                )}
+                              {getAvailableTimeSlots(selectedDate).length === 0 && !customStartTime && (
+                                <p className="text-sm text-red-600 bg-red-50 p-3 rounded-lg">
+                                  No hay horarios sugeridos disponibles. Puedes crear un horario personalizado.
+                                </p>
+                              )}
                             </div>
                           )}
 
@@ -1007,17 +917,11 @@ export default function ReservationsPage() {
                                 type="number"
                                 value={reservationForm.guests}
                                 onChange={(e) => {
-                                  const value = Math.max(
-                                    0,
-                                    Math.min(500, parseInt(e.target.value || "0", 10))
-                                  );
-                                  setReservationForm((prev) => ({
-                                    ...prev,
-                                    guests: value.toString(),
-                                  }));
+                                  const value = Math.max(1, Math.min(500, parseInt(e.target.value || "1", 10)));
+                                  setReservationForm((prev) => ({ ...prev, guests: value.toString() }));
                                 }}
                                 placeholder="Ej: 10"
-                                min="0"
+                                min="1"
                                 className="bg-white/80 border-orange-200"
                               />
                             </div>
@@ -1027,12 +931,7 @@ export default function ReservationsPage() {
                               <Input
                                 id="purpose"
                                 value={reservationForm.purpose}
-                                onChange={(e) =>
-                                  setReservationForm((prev) => ({
-                                    ...prev,
-                                    purpose: e.target.value,
-                                  }))
-                                }
+                                onChange={(e) => setReservationForm((prev) => ({ ...prev, purpose: e.target.value }))}
                                 required
                                 placeholder="Ej: Cumpleaños, Reunión familiar"
                                 className="bg-white/80 border-orange-200"
@@ -1044,12 +943,7 @@ export default function ReservationsPage() {
                               <Textarea
                                 id="notes"
                                 value={reservationForm.notes}
-                                onChange={(e) =>
-                                  setReservationForm((prev) => ({
-                                    ...prev,
-                                    notes: e.target.value,
-                                  }))
-                                }
+                                onChange={(e) => setReservationForm((prev) => ({ ...prev, notes: e.target.value }))}
                                 placeholder="Información adicional..."
                                 rows={3}
                                 className="bg-white/80 border-orange-200"
@@ -1059,31 +953,13 @@ export default function ReservationsPage() {
                         </div>
                       </div>
 
-                      {/* Resumen */}
                       <div className="bg-blue-50 p-4 rounded-lg">
-                        <h4 className="font-semibold text-blue-900 mb-2">
-                          Resumen de Reserva
-                        </h4>
+                        <h4 className="font-semibold text-blue-900 mb-2">Resumen de Reserva</h4>
                         <div className="space-y-1 text-sm text-blue-800">
-                          <p>
-                            <strong>Solicitante:</strong> {userName}
-                          </p>
-                          <p>
-                            <strong>Espacio:</strong> {selectedSpace.name}
-                          </p>
-                          {selectedDate && (
-                            <p>
-                              <strong>Fecha:</strong>{" "}
-                              {new Date(selectedDate + "T00:00:00").toLocaleDateString(
-                                "es-CO"
-                              )}
-                            </p>
-                          )}
-                          {selectedTimeSlot && (
-                            <p>
-                              <strong>Horario:</strong> {selectedTimeSlot}
-                            </p>
-                          )}
+                          <p><strong>Solicitante:</strong> {userName}</p>
+                          <p><strong>Espacio:</strong> {selectedSpace.name}</p>
+                          {selectedDate && <p><strong>Fecha:</strong> {new Date(selectedDate + "T00:00:00").toLocaleDateString("es-CO")}</p>}
+                          {selectedTimeSlot && <p><strong>Horario:</strong> {selectedTimeSlot}</p>}
                         </div>
                       </div>
 
@@ -1091,10 +967,10 @@ export default function ReservationsPage() {
                         <Button
                           type="submit"
                           className="flex-1 bg-gradient-to-r from-green-500 to-emerald-600 text-white"
-                          disabled={!selectedDate || !selectedTimeSlot}
+                          disabled={!selectedDate || !selectedTimeSlot || savingReservation}
                         >
                           <CheckCircle className="h-4 w-4 mr-2" />
-                          Confirmar Reserva
+                          {savingReservation ? "Creando..." : "Confirmar Reserva"}
                         </Button>
 
                         <Button
@@ -1167,17 +1043,13 @@ export default function ReservationsPage() {
 
               {loadingReservations ? (
                 <Card className="shadow-lg border-0 bg-white/90 backdrop-blur-xl">
-                  <CardContent className="p-12 text-center text-slate-600">
-                    Cargando reservas...
-                  </CardContent>
+                  <CardContent className="p-12 text-center text-slate-600">Cargando reservas...</CardContent>
                 </Card>
               ) : filteredReservations.length === 0 ? (
                 <Card className="shadow-lg border-0 bg-white/90 backdrop-blur-xl">
                   <CardContent className="p-12 text-center">
                     <CalendarDays className="h-16 w-16 text-slate-300 mx-auto mb-4" />
-                    <h3 className="text-lg font-semibold text-slate-600 mb-2">
-                      No se encontraron reservas
-                    </h3>
+                    <h3 className="text-lg font-semibold text-slate-600 mb-2">No se encontraron reservas</h3>
                     <p className="text-slate-500">
                       {searchTerm || filterStatus !== "all" || filterSpace !== "all"
                         ? "Intenta ajustar los filtros de búsqueda"
@@ -1188,9 +1060,7 @@ export default function ReservationsPage() {
               ) : (
                 <div className="space-y-4">
                   {filteredReservations.map((reservation) => {
-                    const space = spaces.find(
-                      (s) => String(s.id) === String(reservation.spaceId)
-                    );
+                    const space = spaces.find((s) => String(s.id) === String(reservation.spaceId));
                     const Icon = space?.icon || CalendarDays;
 
                     return (
@@ -1211,9 +1081,7 @@ export default function ReservationsPage() {
 
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center space-x-3 mb-2">
-                                  <h3 className="text-lg font-semibold text-slate-900">
-                                    {reservation.spaceName}
-                                  </h3>
+                                  <h3 className="text-lg font-semibold text-slate-900">{reservation.spaceName}</h3>
                                   <Badge className={getStatusColor(reservation.status)}>
                                     {getStatusText(reservation.status)}
                                   </Badge>
@@ -1223,9 +1091,7 @@ export default function ReservationsPage() {
                                   <div className="flex items-center space-x-2">
                                     <Calendar className="h-4 w-4 text-slate-400" />
                                     <span>
-                                      {new Date(reservation.date + "T00:00:00").toLocaleDateString(
-                                        "es-CO"
-                                      )}
+                                      {new Date(reservation.date + "T00:00:00").toLocaleDateString("es-CO")}
                                     </span>
                                   </div>
                                   <div className="flex items-center space-x-2">
@@ -1242,18 +1108,24 @@ export default function ReservationsPage() {
                                   <p className="text-xs text-slate-500">
                                     Solicitada el{" "}
                                     {reservation.createdDate
-                                      ? new Date(reservation.createdDate + "T00:00:00").toLocaleDateString(
-                                          "es-CO"
-                                        )
+                                      ? new Date(reservation.createdDate + "T00:00:00").toLocaleDateString("es-CO")
                                       : ""}
                                   </p>
+
+                                  {reservation._cargoValor != null && (
+                                    <p className="text-xs text-slate-600">
+                                      Cargo generado:{" "}
+                                      <span className="font-semibold">
+                                        ${Number(reservation._cargoValor).toLocaleString("es-CO")}
+                                      </span>
+                                    </p>
+                                  )}
                                 </div>
                               </div>
                             </div>
 
                             <div className="flex items-center space-x-2 ml-4">
-                              {(reservation.status === "pending" ||
-                                reservation.status === "confirmed") && (
+                              {(reservation.status === "pending" || reservation.status === "confirmed") && (
                                 <Button
                                   size="sm"
                                   variant="outline"
