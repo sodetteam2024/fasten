@@ -18,18 +18,12 @@ import {
   Car,
   Gamepad2,
   BookOpen,
-  ChevronLeft,
-  ChevronRight,
-  X,
-  User,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -41,6 +35,8 @@ import {
 import { SignedIn, SignedOut, useUser } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+
+import ReservationFormModal from "@/app/components/ReservationFormModal";
 
 /* =========================================================
    Helpers de fecha/hor
@@ -136,10 +132,8 @@ export default function ReservationsPage() {
   const router = useRouter();
   const { user } = useUser();
 
-  const [isProfileOpen, setIsProfileOpen] = useState(false);
-
-  const [usuarioDb, setUsuarioDb] = useState(null); // {id_usuario(uuid), idrol}
-  const [perfilDb, setPerfilDb] = useState(null); // {id_perfil, id_unidad, nombre, apellido}
+  const [usuarioDb, setUsuarioDb] = useState(null);
+  const [perfilDb, setPerfilDb] = useState(null);
 
   const [spaces, setSpaces] = useState([]);
   const [loadingSpaces, setLoadingSpaces] = useState(true);
@@ -157,7 +151,6 @@ export default function ReservationsPage() {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [customStartTime, setCustomStartTime] = useState("");
   const [customEndTime, setCustomEndTime] = useState("");
-
   const [savingReservation, setSavingReservation] = useState(false);
 
   const [reservationForm, setReservationForm] = useState({
@@ -179,7 +172,7 @@ export default function ReservationsPage() {
   }
 
   /* =========================================================
-     Cargar usuario + perfil + áreas + reservas
+     Cargar usuario + perfil + áreas + reservas (+ cargos de reservas)
   ========================================================= */
   useEffect(() => {
     if (!user?.id) return;
@@ -188,7 +181,7 @@ export default function ReservationsPage() {
       setLoadingSpaces(true);
       setLoadingReservations(true);
 
-      // 1) usuario en tabla usuarios (por clerk_id)
+      // usuario
       const { data: usuario, error: errUsuario } = await supabase
         .from("usuarios")
         .select("id_usuario, idrol")
@@ -205,10 +198,9 @@ export default function ReservationsPage() {
         setLoadingReservations(false);
         return;
       }
-
       setUsuarioDb(usuario);
 
-      // 2) perfil (para obtener id_unidad)
+      // perfil
       const { data: perfil, error: errPerfil } = await supabase
         .from("perfilesusuarios")
         .select("id_perfil, id_unidad, nombre, apellido")
@@ -224,10 +216,9 @@ export default function ReservationsPage() {
         setLoadingReservations(false);
         return;
       }
-
       setPerfilDb(perfil);
 
-      // 3) áreas activas por unidad
+      // áreas
       const { data: areas, error: errAreas } = await supabase
         .from("areas")
         .select("id, idunidad, nombre, valor_hora, estado, created_at")
@@ -239,39 +230,39 @@ export default function ReservationsPage() {
         console.error("Error cargando áreas:", errAreas);
         setSpaces([]);
       } else {
-        const mapped = (areas || []).map((a) => {
-          const Icon = iconForAreaName(a.nombre);
-          return {
-            id: a.id,
-            name: a.nombre,
-            icon: Icon,
-            description: "Reserva por horario según disponibilidad",
-            capacity: "Consultar",
-            hours: "Según disponibilidad",
-            price:
-              a.valor_hora > 0
-                ? `$${a.valor_hora.toLocaleString("es-CO")}/hora`
-                : "Gratuito",
-            valor_hora: a.valor_hora,
-            color: "from-orange-400 to-pink-500",
-            timeSlots: [
-              "6:00 AM - 8:00 AM",
-              "8:00 AM - 10:00 AM",
-              "10:00 AM - 12:00 PM",
-              "12:00 PM - 2:00 PM",
-              "2:00 PM - 4:00 PM",
-              "4:00 PM - 6:00 PM",
-              "6:00 PM - 8:00 PM",
-              "8:00 PM - 10:00 PM",
-            ],
-          };
-        });
-
-        setSpaces(mapped);
+        setSpaces(
+          (areas || []).map((a) => {
+            const Icon = iconForAreaName(a.nombre);
+            return {
+              id: a.id,
+              name: a.nombre,
+              icon: Icon,
+              description: "Reserva por horario según disponibilidad",
+              capacity: "Consultar",
+              hours: "Según disponibilidad",
+              price:
+                a.valor_hora > 0
+                  ? `$${a.valor_hora.toLocaleString("es-CO")}/hora`
+                  : "Gratuito",
+              valor_hora: a.valor_hora,
+              color: "from-orange-400 to-pink-500",
+              timeSlots: [
+                "6:00 AM - 8:00 AM",
+                "8:00 AM - 10:00 AM",
+                "10:00 AM - 12:00 PM",
+                "12:00 PM - 2:00 PM",
+                "2:00 PM - 4:00 PM",
+                "4:00 PM - 6:00 PM",
+                "6:00 PM - 8:00 PM",
+                "8:00 PM - 10:00 PM",
+              ],
+            };
+          })
+        );
       }
       setLoadingSpaces(false);
 
-      // 4) mis reservas (por id_usuario UUID)
+      // reservas
       const { data: resv, error: errResv } = await supabase
         .from("reservas")
         .select(
@@ -293,48 +284,72 @@ export default function ReservationsPage() {
       if (errResv) {
         console.error("Error cargando reservas:", errResv);
         setReservations([]);
-      } else {
-        const mappedRes = (resv || []).map((r) => {
-          const estado = (r.estado || "").toLowerCase();
-
-          const status =
-            estado === "confirmada"
-              ? "confirmed"
-              : estado === "cancelada"
-              ? "cancelled"
-              : estado === "completada"
-              ? "completed"
-              : "pending";
-
-          const timeSlot = `${new Date(r.fecha_ini).toLocaleTimeString("es-CO", {
-            hour: "2-digit",
-            minute: "2-digit",
-          })} - ${new Date(r.fecha_fin).toLocaleTimeString("es-CO", {
-            hour: "2-digit",
-            minute: "2-digit",
-          })}`;
-
-          return {
-            id: String(r.id),
-            spaceId: r.id_area,
-            spaceName: r.areas?.nombre || "Área",
-            date: new Date(r.fecha_ini).toISOString().slice(0, 10),
-            timeSlot,
-            status,
-            guests: String(r.num_personas ?? ""),
-            purpose: "",
-            notes: "",
-            reservedBy: userName,
-            createdDate: r.created_at
-              ? new Date(r.created_at).toISOString().slice(0, 10)
-              : "",
-            _raw: r,
-          };
-        });
-
-        setReservations(mappedRes);
+        setLoadingReservations(false);
+        return;
       }
 
+      // traer cargos de esas reservas (source_type='reserva')
+      const reservaIds = (resv || []).map((r) => r.id);
+      let cargosMap = new Map();
+      if (reservaIds.length > 0) {
+        const { data: cargos, error: errCargos } = await supabase
+          .from("cargos")
+          .select("id, valor, estado, source_id")
+          .eq("source_type", "reserva")
+          .in("source_id", reservaIds);
+
+        if (errCargos) {
+          console.warn("No se pudieron cargar cargos:", errCargos);
+        } else {
+          for (const c of cargos || []) {
+            cargosMap.set(String(c.source_id), c);
+          }
+        }
+      }
+
+      const mappedRes = (resv || []).map((r) => {
+        const estado = (r.estado || "").toLowerCase();
+        const status =
+          estado === "confirmada"
+            ? "confirmed"
+            : estado === "cancelada"
+            ? "cancelled"
+            : estado === "completada"
+            ? "completed"
+            : "pending";
+
+        const timeSlot = `${new Date(r.fecha_ini).toLocaleTimeString("es-CO", {
+          hour: "2-digit",
+          minute: "2-digit",
+        })} - ${new Date(r.fecha_fin).toLocaleTimeString("es-CO", {
+          hour: "2-digit",
+          minute: "2-digit",
+        })}`;
+
+        const cargo = cargosMap.get(String(r.id));
+
+        return {
+          id: String(r.id),
+          spaceId: r.id_area,
+          spaceName: r.areas?.nombre || "Área",
+          date: new Date(r.fecha_ini).toISOString().slice(0, 10),
+          timeSlot,
+          status,
+          guests: String(r.num_personas ?? ""),
+          purpose: "",
+          notes: "",
+          reservedBy: userName,
+          createdDate: r.created_at
+            ? new Date(r.created_at).toISOString().slice(0, 10)
+            : "",
+          _raw: r,
+          _cargoId: cargo?.id ?? null,
+          _cargoValor: cargo?.valor ?? null,
+          _cargoEstado: cargo?.estado ?? null,
+        };
+      });
+
+      setReservations(mappedRes);
       setLoadingReservations(false);
     };
 
@@ -380,13 +395,9 @@ export default function ReservationsPage() {
 
     const parsed = parseSlotToISO(selectedDate, selectedTimeSlot);
     if (!parsed) {
-      alert(
-        "Horario inválido. Selecciona un horario sugerido o usa el personalizado."
-      );
+      alert("Horario inválido. Selecciona un horario sugerido o usa el personalizado.");
       return;
     }
-
-    // validar que fin > inicio
     if (new Date(parsed.endISO) <= new Date(parsed.startISO)) {
       alert("La hora de fin debe ser mayor a la hora de inicio.");
       return;
@@ -400,8 +411,7 @@ export default function ReservationsPage() {
       num_personas: reservationForm.guests
         ? Math.max(1, parseInt(reservationForm.guests, 10))
         : 1,
-      estado: "pendiente", // enum en minúscula
-      // NOTA: purpose/notes no existen en tu tabla reservas. Si los quieres, toca agregar columnas.
+      estado: "pendiente",
     };
 
     setSavingReservation(true);
@@ -416,21 +426,18 @@ export default function ReservationsPage() {
 
     if (error) {
       console.error("Error creando reserva:", error);
-
-      // Mensaje específico para overlap (constraint)
       const msg = (error.message || "").toLowerCase();
       if (msg.includes("reservas_no_overlap") || msg.includes("exclude")) {
         alert("Ese horario ya está reservado para esa área. Elige otro horario.");
         return;
       }
-
       alert("No se pudo crear la reserva. Revisa permisos/políticas y vuelve a intentar.");
       return;
     }
 
-    // (Opcional) consultar cargo generado por trigger (si valor_hora > 0)
-    // NOTA: esto depende de RLS/policies. Si te da error, simplemente lo ignoramos.
+    // intentar traer cargo generado por trigger (opcional)
     let cargoValor = null;
+    let cargoId = null;
     try {
       const { data: cargo } = await supabase
         .from("cargos")
@@ -439,28 +446,31 @@ export default function ReservationsPage() {
         .eq("source_id", data.id)
         .single();
 
+      if (cargo?.id) cargoId = cargo.id;
       if (cargo?.valor != null) cargoValor = cargo.valor;
     } catch {}
 
-    const newReservation = {
-      id: String(data.id),
-      spaceId: selectedSpace.id,
-      spaceName: selectedSpace.name,
-      date: selectedDate,
-      timeSlot: selectedTimeSlot,
-      status: "pending",
-      guests: String(payload.num_personas),
-      purpose: reservationForm.purpose,
-      notes: reservationForm.notes,
-      reservedBy: userName,
-      createdDate: new Date().toISOString().split("T")[0],
-      _raw: data,
-      _cargoValor: cargoValor,
-    };
+    setReservations((prev) => [
+      {
+        id: String(data.id),
+        spaceId: selectedSpace.id,
+        spaceName: selectedSpace.name,
+        date: selectedDate,
+        timeSlot: selectedTimeSlot,
+        status: "pending",
+        guests: String(payload.num_personas),
+        purpose: reservationForm.purpose,
+        notes: reservationForm.notes,
+        reservedBy: userName,
+        createdDate: new Date().toISOString().split("T")[0],
+        _raw: data,
+        _cargoId: cargoId,
+        _cargoValor: cargoValor,
+        _cargoEstado: "pendiente",
+      },
+      ...prev,
+    ]);
 
-    setReservations((prev) => [newReservation, ...prev]);
-
-    // reset
     setReservationForm({ guests: "", purpose: "", notes: "" });
     setSelectedSpace(null);
     setSelectedDate("");
@@ -469,11 +479,16 @@ export default function ReservationsPage() {
     setCustomEndTime("");
     setShowReservationForm(false);
 
-    if (cargoValor != null) {
-      alert(`¡Reserva creada! Se generó un cargo de $${cargoValor.toLocaleString("es-CO")}.`);
-    } else {
-      alert("¡Reserva solicitada exitosamente!");
-    }
+    alert("¡Reserva solicitada exitosamente!");
+  };
+
+  const closeModal = () => {
+    setShowReservationForm(false);
+    setSelectedSpace(null);
+    setSelectedDate("");
+    setSelectedTimeSlot("");
+    setCustomStartTime("");
+    setCustomEndTime("");
   };
 
   /* =========================================================
@@ -483,13 +498,11 @@ export default function ReservationsPage() {
     const r = reservations.find((x) => x.id === reservationId);
     if (!r?._raw?.id) return;
 
-    if (!window.confirm("¿Estás seguro de que deseas cancelar esta reserva?")) {
-      return;
-    }
+    if (!window.confirm("¿Estás seguro de que deseas cancelar esta reserva?")) return;
 
     const { error } = await supabase
       .from("reservas")
-      .update({ estado: "cancelada" }) // enum minúscula
+      .update({ estado: "cancelada" })
       .eq("id", r._raw.id);
 
     if (error) {
@@ -502,6 +515,26 @@ export default function ReservationsPage() {
       prev.map((x) => (x.id === reservationId ? { ...x, status: "cancelled" } : x))
     );
     alert("Reserva cancelada exitosamente");
+  };
+
+  /* =========================================================
+     BOTÓN PAGAR (solo en reservas con cargo)
+     - Dejamos el link listo para que /pagos abra modal por query
+========================================================= */
+  const handlePayReservation = (reservation) => {
+    const reservaId = reservation?._raw?.id;
+    if (!reservaId) return;
+
+    // Lo que usaremos luego en /pagos para abrir el modal automáticamente:
+    // /pagos?source_type=reserva&source_id=123
+    router.push(`/pagos?source_type=reserva&source_id=${reservaId}`);
+  };
+
+  const shouldShowPayButton = (reservation) => {
+    const active = reservation.status === "pending" || reservation.status === "confirmed";
+    const hasCargo = Number(reservation._cargoValor || 0) > 0;
+    const cargoPendiente = (reservation._cargoEstado || "").toLowerCase() === "pendiente";
+    return active && hasCargo && cargoPendiente;
   };
 
   /* =========================================================
@@ -556,13 +589,13 @@ export default function ReservationsPage() {
   ========================================================= */
   const getDaysInMonth = (date) =>
     new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
-
   const getFirstDayOfMonth = (date) =>
     new Date(date.getFullYear(), date.getMonth(), 1).getDay();
 
   const isDateAvailable = (date) => {
     const today = new Date();
     const checkDate = new Date(date);
+
     if (checkDate < today.setHours(0, 0, 0, 0)) return false;
     if (!selectedSpace) return true;
 
@@ -633,6 +666,7 @@ export default function ReservationsPage() {
         </button>
       );
     }
+
     return days;
   };
 
@@ -662,25 +696,12 @@ export default function ReservationsPage() {
           </div>
 
           <main className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-            {/* Header */}
-            <div className="mb-8 flex items-start justify-between gap-4">
-              <div>
-                <h1 className="text-4xl font-bold bg-gradient-to-r from-orange-600 via-pink-600 to-purple-600 bg-clip-text text-transparent mb-2">
-                  Reservas de Espacios
-                </h1>
-                <p className="text-slate-600">
-                  Reserva las áreas comunes del conjunto residencial
-                </p>
-              </div>
-
-              <Button
-                variant="outline"
-                onClick={() => setIsProfileOpen(true)}
-                className="border-orange-200 hover:bg-orange-50"
-              >
-                <User className="h-4 w-4 mr-2" />
-                {userName}
-              </Button>
+            {/* Header (sin botón usuario) */}
+            <div className="mb-8">
+              <h1 className="text-4xl font-bold bg-gradient-to-r from-orange-600 via-pink-600 to-purple-600 bg-clip-text text-transparent mb-2">
+                Reservas de Espacios
+              </h1>
+              <p className="text-slate-600">Reserva las áreas comunes del conjunto residencial</p>
             </div>
 
             {/* Available Spaces */}
@@ -746,254 +767,29 @@ export default function ReservationsPage() {
               )}
             </div>
 
-            {/* Reservation Form Modal */}
-            {showReservationForm && selectedSpace && (
-              <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                <Card className="w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl border-0 bg-white/95 backdrop-blur-xl">
-                  <CardHeader className="border-b border-orange-200/50">
-                    <div className="flex items-center justify-between">
-                      <CardTitle className="bg-gradient-to-r from-orange-600 to-pink-600 bg-clip-text text-transparent flex items-center">
-                        <selectedSpace.icon className="h-6 w-6 mr-3 text-orange-600" />
-                        Reservar {selectedSpace.name}
-                      </CardTitle>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => {
-                          setShowReservationForm(false);
-                          setSelectedSpace(null);
-                          setSelectedDate("");
-                          setSelectedTimeSlot("");
-                          setCustomStartTime("");
-                          setCustomEndTime("");
-                        }}
-                      >
-                        <X className="h-5 w-5" />
-                      </Button>
-                    </div>
-                  </CardHeader>
-
-                  <CardContent className="p-6">
-                    <form onSubmit={handleReservationSubmit} className="space-y-6">
-                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                        {/* Calendar */}
-                        <div className="space-y-4">
-                          <h3 className="text-lg font-semibold text-slate-900">Seleccionar Fecha</h3>
-
-                          <div className="bg-gradient-to-r from-orange-50 to-pink-50 p-4 rounded-lg">
-                            <div className="flex items-center justify-between mb-4">
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                onClick={() =>
-                                  setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1))
-                                }
-                              >
-                                <ChevronLeft className="h-4 w-4" />
-                              </Button>
-
-                              <h4 className="font-semibold text-slate-900">
-                                {currentMonth.toLocaleDateString("es-CO", { month: "long", year: "numeric" })}
-                              </h4>
-
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                onClick={() =>
-                                  setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1))
-                                }
-                              >
-                                <ChevronRight className="h-4 w-4" />
-                              </Button>
-                            </div>
-
-                            <div className="grid grid-cols-7 gap-1 mb-2">
-                              {["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"].map((day) => (
-                                <div key={day} className="h-8 flex items-center justify-center text-xs font-medium text-slate-600">
-                                  {day}
-                                </div>
-                              ))}
-                            </div>
-
-                            <div className="grid grid-cols-7 gap-1">{renderCalendar()}</div>
-                          </div>
-
-                          {selectedDate && (
-                            <div className="bg-blue-50 p-3 rounded-lg">
-                              <p className="text-sm font-medium text-blue-900">
-                                Fecha seleccionada:{" "}
-                                {new Date(selectedDate + "T00:00:00").toLocaleDateString("es-CO", {
-                                  weekday: "long",
-                                  year: "numeric",
-                                  month: "long",
-                                  day: "numeric",
-                                })}
-                              </p>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Slots + Form */}
-                        <div className="space-y-4">
-                          {selectedDate && (
-                            <div>
-                              <h3 className="text-lg font-semibold text-slate-900 mb-3">Horarios</h3>
-
-                              <div className="mb-4">
-                                <h4 className="text-sm font-medium text-slate-700 mb-2">Horarios Sugeridos</h4>
-                                <div className="grid grid-cols-1 gap-2 max-h-32 overflow-y-auto">
-                                  {getAvailableTimeSlots(selectedDate).map((slot) => (
-                                    <Button
-                                      key={slot}
-                                      type="button"
-                                      variant={selectedTimeSlot === slot ? "default" : "outline"}
-                                      className={`justify-start text-sm ${
-                                        selectedTimeSlot === slot
-                                          ? "bg-gradient-to-r from-orange-400 to-pink-500 text-white"
-                                          : "border-orange-200 hover:bg-orange-50"
-                                      }`}
-                                      onClick={() => setSelectedTimeSlot(slot)}
-                                    >
-                                      <Clock className="h-4 w-4 mr-2" />
-                                      {slot}
-                                    </Button>
-                                  ))}
-                                </div>
-                              </div>
-
-                              <div className="space-y-3">
-                                <h4 className="text-sm font-medium text-slate-700">Horario Personalizado</h4>
-                                <div className="grid grid-cols-2 gap-3">
-                                  <div className="space-y-1">
-                                    <Label htmlFor="startTime" className="text-xs">Hora de Inicio</Label>
-                                    <Input
-                                      id="startTime"
-                                      type="time"
-                                      value={customStartTime}
-                                      onChange={(e) => setCustomStartTime(e.target.value)}
-                                      className="bg-white/80 border-orange-200"
-                                    />
-                                  </div>
-                                  <div className="space-y-1">
-                                    <Label htmlFor="endTime" className="text-xs">Hora de Fin</Label>
-                                    <Input
-                                      id="endTime"
-                                      type="time"
-                                      value={customEndTime}
-                                      onChange={(e) => setCustomEndTime(e.target.value)}
-                                      className="bg-white/80 border-orange-200"
-                                    />
-                                  </div>
-                                </div>
-
-                                {customStartTime && customEndTime && (
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => setSelectedTimeSlot(`${customStartTime} - ${customEndTime}`)}
-                                    className="w-full border-blue-200 hover:bg-blue-50 text-blue-700"
-                                  >
-                                    Usar Horario Personalizado: {customStartTime} - {customEndTime}
-                                  </Button>
-                                )}
-                              </div>
-
-                              {getAvailableTimeSlots(selectedDate).length === 0 && !customStartTime && (
-                                <p className="text-sm text-red-600 bg-red-50 p-3 rounded-lg">
-                                  No hay horarios sugeridos disponibles. Puedes crear un horario personalizado.
-                                </p>
-                              )}
-                            </div>
-                          )}
-
-                          <div className="space-y-4">
-                            <div className="space-y-2">
-                              <Label htmlFor="guests">Número de Invitados</Label>
-                              <Input
-                                id="guests"
-                                type="number"
-                                value={reservationForm.guests}
-                                onChange={(e) => {
-                                  const value = Math.max(1, Math.min(500, parseInt(e.target.value || "1", 10)));
-                                  setReservationForm((prev) => ({ ...prev, guests: value.toString() }));
-                                }}
-                                placeholder="Ej: 10"
-                                min="1"
-                                className="bg-white/80 border-orange-200"
-                              />
-                            </div>
-
-                            <div className="space-y-2">
-                              <Label htmlFor="purpose">Motivo de la Reserva *</Label>
-                              <Input
-                                id="purpose"
-                                value={reservationForm.purpose}
-                                onChange={(e) => setReservationForm((prev) => ({ ...prev, purpose: e.target.value }))}
-                                required
-                                placeholder="Ej: Cumpleaños, Reunión familiar"
-                                className="bg-white/80 border-orange-200"
-                              />
-                            </div>
-
-                            <div className="space-y-2">
-                              <Label htmlFor="notes">Notas Adicionales</Label>
-                              <Textarea
-                                id="notes"
-                                value={reservationForm.notes}
-                                onChange={(e) => setReservationForm((prev) => ({ ...prev, notes: e.target.value }))}
-                                placeholder="Información adicional..."
-                                rows={3}
-                                className="bg-white/80 border-orange-200"
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="bg-blue-50 p-4 rounded-lg">
-                        <h4 className="font-semibold text-blue-900 mb-2">Resumen de Reserva</h4>
-                        <div className="space-y-1 text-sm text-blue-800">
-                          <p><strong>Solicitante:</strong> {userName}</p>
-                          <p><strong>Espacio:</strong> {selectedSpace.name}</p>
-                          {selectedDate && <p><strong>Fecha:</strong> {new Date(selectedDate + "T00:00:00").toLocaleDateString("es-CO")}</p>}
-                          {selectedTimeSlot && <p><strong>Horario:</strong> {selectedTimeSlot}</p>}
-                        </div>
-                      </div>
-
-                      <div className="flex gap-4">
-                        <Button
-                          type="submit"
-                          className="flex-1 bg-gradient-to-r from-green-500 to-emerald-600 text-white"
-                          disabled={!selectedDate || !selectedTimeSlot || savingReservation}
-                        >
-                          <CheckCircle className="h-4 w-4 mr-2" />
-                          {savingReservation ? "Creando..." : "Confirmar Reserva"}
-                        </Button>
-
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={() => {
-                            setShowReservationForm(false);
-                            setSelectedSpace(null);
-                            setSelectedDate("");
-                            setSelectedTimeSlot("");
-                            setCustomStartTime("");
-                            setCustomEndTime("");
-                          }}
-                          className="border-orange-200 hover:bg-orange-50"
-                        >
-                          Cancelar
-                        </Button>
-                      </div>
-                    </form>
-                  </CardContent>
-                </Card>
-              </div>
-            )}
+            {/* Modal como componente */}
+            <ReservationFormModal
+              open={showReservationForm}
+              selectedSpace={selectedSpace}
+              selectedDate={selectedDate}
+              setSelectedDate={setSelectedDate}
+              selectedTimeSlot={selectedTimeSlot}
+              setSelectedTimeSlot={setSelectedTimeSlot}
+              currentMonth={currentMonth}
+              setCurrentMonth={setCurrentMonth}
+              customStartTime={customStartTime}
+              setCustomStartTime={setCustomStartTime}
+              customEndTime={customEndTime}
+              setCustomEndTime={setCustomEndTime}
+              reservationForm={reservationForm}
+              setReservationForm={setReservationForm}
+              getAvailableTimeSlots={getAvailableTimeSlots}
+              renderCalendar={renderCalendar}
+              userName={userName}
+              savingReservation={savingReservation}
+              onSubmit={handleReservationSubmit}
+              onClose={closeModal}
+            />
 
             {/* Mis Reservas */}
             <div className="space-y-6">
@@ -1043,13 +839,17 @@ export default function ReservationsPage() {
 
               {loadingReservations ? (
                 <Card className="shadow-lg border-0 bg-white/90 backdrop-blur-xl">
-                  <CardContent className="p-12 text-center text-slate-600">Cargando reservas...</CardContent>
+                  <CardContent className="p-12 text-center text-slate-600">
+                    Cargando reservas...
+                  </CardContent>
                 </Card>
               ) : filteredReservations.length === 0 ? (
                 <Card className="shadow-lg border-0 bg-white/90 backdrop-blur-xl">
                   <CardContent className="p-12 text-center">
                     <CalendarDays className="h-16 w-16 text-slate-300 mx-auto mb-4" />
-                    <h3 className="text-lg font-semibold text-slate-600 mb-2">No se encontraron reservas</h3>
+                    <h3 className="text-lg font-semibold text-slate-600 mb-2">
+                      No se encontraron reservas
+                    </h3>
                     <p className="text-slate-500">
                       {searchTerm || filterStatus !== "all" || filterSpace !== "all"
                         ? "Intenta ajustar los filtros de búsqueda"
@@ -1060,7 +860,9 @@ export default function ReservationsPage() {
               ) : (
                 <div className="space-y-4">
                   {filteredReservations.map((reservation) => {
-                    const space = spaces.find((s) => String(s.id) === String(reservation.spaceId));
+                    const space = spaces.find(
+                      (s) => String(s.id) === String(reservation.spaceId)
+                    );
                     const Icon = space?.icon || CalendarDays;
 
                     return (
@@ -1069,7 +871,7 @@ export default function ReservationsPage() {
                         className="shadow-lg border-0 bg-white/90 backdrop-blur-xl hover:shadow-xl transition-all duration-300 hover:scale-[1.01]"
                       >
                         <CardContent className="p-6">
-                          <div className="flex items-start justify-between">
+                          <div className="flex items-start justify-between gap-4">
                             <div className="flex items-start space-x-4 flex-1">
                               <div
                                 className={`w-12 h-12 bg-gradient-to-br ${
@@ -1081,13 +883,15 @@ export default function ReservationsPage() {
 
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center space-x-3 mb-2">
-                                  <h3 className="text-lg font-semibold text-slate-900">{reservation.spaceName}</h3>
+                                  <h3 className="text-lg font-semibold text-slate-900">
+                                    {reservation.spaceName}
+                                  </h3>
                                   <Badge className={getStatusColor(reservation.status)}>
                                     {getStatusText(reservation.status)}
                                   </Badge>
                                 </div>
 
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 text-sm text-slate-600 mb-3">
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm text-slate-600 mb-3">
                                   <div className="flex items-center space-x-2">
                                     <Calendar className="h-4 w-4 text-slate-400" />
                                     <span>
@@ -1104,27 +908,26 @@ export default function ReservationsPage() {
                                   </div>
                                 </div>
 
-                                <div className="space-y-1">
-                                  <p className="text-xs text-slate-500">
-                                    Solicitada el{" "}
-                                    {reservation.createdDate
-                                      ? new Date(reservation.createdDate + "T00:00:00").toLocaleDateString("es-CO")
-                                      : ""}
+                                {reservation._cargoValor != null && (
+                                  <p className="text-xs text-slate-600">
+                                    Cargo:{" "}
+                                    <span className="font-semibold">
+                                      ${Number(reservation._cargoValor).toLocaleString("es-CO")}
+                                    </span>{" "}
+                                    ({reservation._cargoEstado || "pendiente"})
                                   </p>
+                                )}
 
-                                  {reservation._cargoValor != null && (
-                                    <p className="text-xs text-slate-600">
-                                      Cargo generado:{" "}
-                                      <span className="font-semibold">
-                                        ${Number(reservation._cargoValor).toLocaleString("es-CO")}
-                                      </span>
-                                    </p>
-                                  )}
-                                </div>
+                                <p className="text-xs text-slate-500 mt-1">
+                                  Solicitada el{" "}
+                                  {reservation.createdDate
+                                    ? new Date(reservation.createdDate + "T00:00:00").toLocaleDateString("es-CO")
+                                    : ""}
+                                </p>
                               </div>
                             </div>
 
-                            <div className="flex items-center space-x-2 ml-4">
+                            <div className="flex flex-col gap-2 items-end">
                               {(reservation.status === "pending" || reservation.status === "confirmed") && (
                                 <Button
                                   size="sm"
@@ -1134,6 +937,17 @@ export default function ReservationsPage() {
                                 >
                                   <XCircle className="h-4 w-4 mr-1" />
                                   Cancelar
+                                </Button>
+                              )}
+
+                              {shouldShowPayButton(reservation) && (
+                                <Button
+                                  size="sm"
+                                  onClick={() => handlePayReservation(reservation)}
+                                  className="bg-gradient-to-r from-blue-500 to-indigo-600 text-white hover:opacity-90"
+                                >
+                                  <CheckCircle className="h-4 w-4 mr-1" />
+                                  Pagar
                                 </Button>
                               )}
                             </div>
