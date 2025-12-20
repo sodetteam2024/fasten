@@ -36,7 +36,7 @@ import { SignedIn, SignedOut, useUser } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 
-import ReservationFormModal from "@/app/components/ReservationFormModal";
+import ReservationFormModal from "@/components/ReservationFormModal";
 
 /* =========================================================
    Helpers de fecha/hor
