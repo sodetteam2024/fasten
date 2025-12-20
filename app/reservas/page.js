@@ -47,7 +47,7 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 
 /* =========================================================
-   Helpers de fecha/hora
+   Helpers de fecha/hor
 ========================================================= */
 
 function pad2(n) {
