@@ -150,9 +150,9 @@ export default function RegistrarUsuarioForm({ onSuccess }) {
 
   return (
     <div className="bg-white shadow-lg rounded-2xl w-full p-6 sm:p-8">
-      <h1 className="text-xl sm:text-2xl font-semibold text-gray-800 mb-6">
+      <h2 className="text-xl sm:text-2xl font-semibold text-gray-800 mb-6">
         Crear nuevo usuario
-      </h1>
+      </h2>
 
       <form
         onSubmit={handleSubmit}
