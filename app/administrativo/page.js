@@ -16,47 +16,44 @@ import RegistrarUsuarioForm from "@/components/RegistrarUsuarioForm";
 import UsuariosActivos from "@/components/UsuariosActivos";
 
 export default function PanelAdministrativo() {
-  const [activeUserSub, setActiveUserSub] = useState("activos"); 
+  const [activeUserSub, setActiveUserSub] = useState("activos");
   // opciones: "activos" | "registrar" | "baneados"
 
   return (
-    <div className="min-h-[calc(100vh-64px)] bg-[#f5f5f5] px-6 py-8">
-      {/* Layout principal sin tarjeta blanca */}
+    // ✅ Usa tokens del tema (claro/oscuro)
+    <div className="min-h-[calc(100vh-64px)] bg-background text-foreground px-6 py-8">
       <div className="mx-auto max-w-7xl flex gap-10">
-        
         {/* SIDEBAR */}
-        <aside className="w-64 pr-6 border-r border-gray-300">
-          
+        <aside className="w-64 pr-6 border-r border-border">
           {/* Buscador */}
           <div className="mb-6">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <input
                 type="text"
                 placeholder="Buscar"
-                className="w-full rounded-xl border border-gray-300 bg-white px-10 py-2 text-sm placeholder:text-gray-400 focus:ring-2 focus:ring-purple-200 outline-none"
+                className="w-full rounded-xl border border-border bg-card px-10 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:ring-2 focus:ring-purple-300/40 outline-none"
               />
             </div>
           </div>
 
           {/* Menú */}
-          <nav className="space-y-6 text-sm text-gray-800">
+          <nav className="space-y-6 text-sm">
             {/* Grupo Usuarios */}
             <div>
-              <div className="mb-1 flex items-center gap-2 font-semibold">
+              <div className="mb-1 flex items-center gap-2 font-semibold text-foreground">
                 <UsersIcon className="h-4 w-4" />
                 <span>Usuarios</span>
               </div>
 
-              <div className="ml-5 border-l border-gray-300 pl-3 space-y-1 text-xs">
-
+              <div className="ml-5 border-l border-border pl-3 space-y-1 text-xs">
                 {/* Activos */}
                 <button
                   onClick={() => setActiveUserSub("activos")}
-                  className={`flex items-center gap-2 ${
+                  className={`flex items-center gap-2 transition ${
                     activeUserSub === "activos"
-                      ? "text-purple-700 font-semibold"
-                      : "text-gray-700 hover:text-purple-600"
+                      ? "text-purple-600 font-semibold"
+                      : "text-muted-foreground hover:text-purple-500"
                   }`}
                 >
                   <UserCheck className="h-3 w-3" />
@@ -66,10 +63,10 @@ export default function PanelAdministrativo() {
                 {/* Registrar */}
                 <button
                   onClick={() => setActiveUserSub("registrar")}
-                  className={`flex items-center gap-2 ${
+                  className={`flex items-center gap-2 transition ${
                     activeUserSub === "registrar"
-                      ? "text-purple-700 font-semibold"
-                      : "text-gray-700 hover:text-purple-600"
+                      ? "text-purple-600 font-semibold"
+                      : "text-muted-foreground hover:text-purple-500"
                   }`}
                 >
                   <UserPlus className="h-3 w-3" />
@@ -79,31 +76,30 @@ export default function PanelAdministrativo() {
                 {/* Baneados */}
                 <button
                   onClick={() => setActiveUserSub("baneados")}
-                  className={`flex items-center gap-2 ${
+                  className={`flex items-center gap-2 transition ${
                     activeUserSub === "baneados"
-                      ? "text-purple-700 font-semibold"
-                      : "text-gray-700 hover:text-purple-600"
+                      ? "text-purple-600 font-semibold"
+                      : "text-muted-foreground hover:text-purple-500"
                   }`}
                 >
                   <UserX className="h-3 w-3" />
                   Baneados
                 </button>
-
               </div>
             </div>
 
             {/* Secciones adicionales */}
-            <button className="flex items-center gap-2 hover:text-purple-600">
+            <button className="flex items-center gap-2 text-muted-foreground hover:text-purple-500 transition">
               <CalendarDays className="h-4 w-4" />
               Reservas
             </button>
 
-            <button className="flex items-center gap-2 hover:text-purple-600">
+            <button className="flex items-center gap-2 text-muted-foreground hover:text-purple-500 transition">
               <CreditCard className="h-4 w-4" />
               Pagos
             </button>
 
-            <button className="flex items-center gap-2 hover:text-purple-600">
+            <button className="flex items-center gap-2 text-muted-foreground hover:text-purple-500 transition">
               <Users className="h-4 w-4" />
               Visitas
             </button>
@@ -111,32 +107,34 @@ export default function PanelAdministrativo() {
         </aside>
 
         {/* CONTENIDO PRINCIPAL */}
-        <main className="flex-1">
-
-          <h1 className="text-2xl font-semibold text-gray-900 mb-6">
+        <main className="flex-1 min-w-0">
+          <h1 className="text-2xl font-semibold text-foreground mb-6">
             Panel Administrativo
           </h1>
 
-          {/* Render dinámico según selección */}
-          <div>
+          {/* ✅ Wrapper con scroll horizontal interno */}
+          <div className="rounded-2xl border border-border bg-card text-card-foreground shadow-sm">
+            <div className="p-5">
+              <div className="w-full overflow-x-auto">
+                {/* ✅ min-width para que tablas/grids no rompan el layout */}
+                <div className="min-w-[1100px]">
+                  {activeUserSub === "activos" && <UsuariosActivos />}
+                  {activeUserSub === "registrar" && <RegistrarUsuarioForm />}
 
-            {activeUserSub === "activos" && (
-              <UsuariosActivos />
-            )}
-
-            {activeUserSub === "registrar" && (
-              <RegistrarUsuarioForm />
-            )}
-
-            {activeUserSub === "baneados" && (
-              <div className="rounded-xl bg-white border border-gray-300 p-5 shadow-sm">
-                <p className="font-semibold mb-2">Usuarios baneados</p>
-                <p className="text-gray-600 text-sm">
-                  Aquí aparecerán los usuarios marcados como inactivos/restringidos.
-                </p>
+                  {activeUserSub === "baneados" && (
+                    <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
+                      <p className="font-semibold mb-2 text-foreground">
+                        Usuarios baneados
+                      </p>
+                      <p className="text-muted-foreground text-sm">
+                        Aquí aparecerán los usuarios marcados como
+                        inactivos/restringidos.
+                      </p>
+                    </div>
+                  )}
+                </div>
               </div>
-            )}
-
+            </div>
           </div>
         </main>
       </div>

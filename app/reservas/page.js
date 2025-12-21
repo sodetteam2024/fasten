@@ -181,7 +181,6 @@ export default function ReservationsPage() {
       setLoadingSpaces(true);
       setLoadingReservations(true);
 
-      // usuario
       const { data: usuario, error: errUsuario } = await supabase
         .from("usuarios")
         .select("id_usuario, idrol")
@@ -200,7 +199,6 @@ export default function ReservationsPage() {
       }
       setUsuarioDb(usuario);
 
-      // perfil
       const { data: perfil, error: errPerfil } = await supabase
         .from("perfilesusuarios")
         .select("id_perfil, id_unidad, nombre, apellido")
@@ -218,7 +216,6 @@ export default function ReservationsPage() {
       }
       setPerfilDb(perfil);
 
-      // áreas
       const { data: areas, error: errAreas } = await supabase
         .from("areas")
         .select("id, idunidad, nombre, valor_hora, estado, created_at")
@@ -262,7 +259,6 @@ export default function ReservationsPage() {
       }
       setLoadingSpaces(false);
 
-      // reservas
       const { data: resv, error: errResv } = await supabase
         .from("reservas")
         .select(
@@ -288,7 +284,6 @@ export default function ReservationsPage() {
         return;
       }
 
-      // traer cargos de esas reservas (source_type='reserva')
       const reservaIds = (resv || []).map((r) => r.id);
       let cargosMap = new Map();
       if (reservaIds.length > 0) {
@@ -301,9 +296,7 @@ export default function ReservationsPage() {
         if (errCargos) {
           console.warn("No se pudieron cargar cargos:", errCargos);
         } else {
-          for (const c of cargos || []) {
-            cargosMap.set(String(c.source_id), c);
-          }
+          for (const c of cargos || []) cargosMap.set(String(c.source_id), c);
         }
       }
 
@@ -370,7 +363,7 @@ export default function ReservationsPage() {
   };
 
   /* =========================================================
-     Reservar (insert en BD)
+     Reservar
   ========================================================= */
   const handleReservationSubmit = async (e) => {
     e.preventDefault();
@@ -395,7 +388,9 @@ export default function ReservationsPage() {
 
     const parsed = parseSlotToISO(selectedDate, selectedTimeSlot);
     if (!parsed) {
-      alert("Horario inválido. Selecciona un horario sugerido o usa el personalizado.");
+      alert(
+        "Horario inválido. Selecciona un horario sugerido o usa el personalizado."
+      );
       return;
     }
     if (new Date(parsed.endISO) <= new Date(parsed.startISO)) {
@@ -435,7 +430,6 @@ export default function ReservationsPage() {
       return;
     }
 
-    // intentar traer cargo generado por trigger (opcional)
     let cargoValor = null;
     let cargoId = null;
     try {
@@ -492,7 +486,7 @@ export default function ReservationsPage() {
   };
 
   /* =========================================================
-     Cancelar (update en BD)
+     Cancelar
   ========================================================= */
   const handleCancelReservation = async (reservationId) => {
     const r = reservations.find((x) => x.id === reservationId);
@@ -518,15 +512,11 @@ export default function ReservationsPage() {
   };
 
   /* =========================================================
-     BOTÓN PAGAR (solo en reservas con cargo)
-     - Dejamos el link listo para que /pagos abra modal por query
-========================================================= */
+     Pagar
+  ========================================================= */
   const handlePayReservation = (reservation) => {
     const reservaId = reservation?._raw?.id;
     if (!reservaId) return;
-
-    // Lo que usaremos luego en /pagos para abrir el modal automáticamente:
-    // /pagos?source_type=reserva&source_id=123
     router.push(`/pagos?source_type=reserva&source_id=${reservaId}`);
   };
 
@@ -658,7 +648,7 @@ export default function ReservationsPage() {
               : isToday
               ? "bg-gradient-to-r from-blue-100 to-cyan-100 text-blue-700 border border-blue-200"
               : available
-              ? "hover:bg-gradient-to-r hover:from-orange-100 hover:to-pink-100 text-slate-700"
+              ? "hover:bg-gradient-to-r hover:from-orange-100 hover:to-pink-100 text-slate-700 dark:text-slate-200"
               : "text-slate-300 cursor-not-allowed"
           }`}
         >
@@ -680,284 +670,296 @@ export default function ReservationsPage() {
       </SignedOut>
 
       <SignedIn>
-        <div className="min-h-screen relative overflow-hidden bg-gradient-to-br from-orange-50 via-pink-50 to-purple-100">
-          {/* Decorative */}
-          <div className="absolute inset-0 overflow-hidden pointer-events-none">
-            <div className="absolute top-20 left-10 w-32 h-32 bg-gradient-to-r from-pink-300 to-rose-400 rounded-full opacity-20 animate-pulse"></div>
-            <div className="absolute top-40 right-20 w-24 h-24 bg-gradient-to-r from-blue-300 to-cyan-400 rounded-full opacity-25 animate-bounce"></div>
-            <div
-              className="absolute bottom-32 left-1/4 w-40 h-40 bg-gradient-to-r from-purple-300 to-indigo-400 rounded-full opacity-15 animate-pulse"
-              style={{ animationDelay: "1000ms" }}
-            ></div>
-            <div
-              className="absolute bottom-20 right-1/3 w-28 h-28 bg-gradient-to-r from-emerald-300 to-teal-400 transform rotate-12 opacity-20 animate-bounce"
-              style={{ animationDelay: "500ms" }}
-            ></div>
-          </div>
+        {/* ✅ Fondo según tema (blanco/negro) */}
+        <div className="min-h-screen bg-background text-foreground">
+          {/* ✅ Panel contenedor (blanco en claro / negro en oscuro) */}
+          <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            <div className="rounded-3xl border border-border bg-white text-black dark:bg-black dark:text-white shadow-sm">
+              <div className="p-6 sm:p-8">
+                {/* Header */}
+                <div className="mb-8">
+                  <h1 className="text-4xl font-bold bg-gradient-to-r from-orange-600 via-pink-600 to-purple-600 bg-clip-text text-transparent mb-2">
+                    Reservas de Espacios
+                  </h1>
+                  <p className="text-slate-600 dark:text-slate-300">
+                    Reserva las áreas comunes del conjunto residencial
+                  </p>
+                </div>
 
-          <main className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-            {/* Header (sin botón usuario) */}
-            <div className="mb-8">
-              <h1 className="text-4xl font-bold bg-gradient-to-r from-orange-600 via-pink-600 to-purple-600 bg-clip-text text-transparent mb-2">
-                Reservas de Espacios
-              </h1>
-              <p className="text-slate-600">Reserva las áreas comunes del conjunto residencial</p>
-            </div>
+                {/* Available Spaces */}
+                <div className="mb-12">
+                  <h2 className="text-2xl font-bold bg-gradient-to-r from-orange-600 to-pink-600 bg-clip-text text-transparent mb-6">
+                    Espacios Disponibles
+                  </h2>
 
-            {/* Available Spaces */}
-            <div className="mb-12">
-              <h2 className="text-2xl font-bold bg-gradient-to-r from-orange-600 to-pink-600 bg-clip-text text-transparent mb-6">
-                Espacios Disponibles
-              </h2>
-
-              {loadingSpaces ? (
-                <Card className="shadow-lg border-0 bg-white/90 backdrop-blur-xl">
-                  <CardContent className="p-8 text-slate-600">Cargando áreas...</CardContent>
-                </Card>
-              ) : spaces.length === 0 ? (
-                <Card className="shadow-lg border-0 bg-white/90 backdrop-blur-xl">
-                  <CardContent className="p-8 text-slate-600">
-                    No hay áreas activas para reservar.
-                  </CardContent>
-                </Card>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                  {spaces.map((space) => (
-                    <Card
-                      key={space.id}
-                      className="shadow-lg border-0 bg-white/90 backdrop-blur-xl hover:shadow-xl transition-all duration-300 hover:scale-[1.02] cursor-pointer"
-                      onClick={() => handleSpaceSelect(space)}
-                    >
-                      <CardContent className="p-6">
-                        <div className="space-y-4">
-                          <div
-                            className={`w-16 h-16 bg-gradient-to-br ${space.color} rounded-xl flex items-center justify-center shadow-lg`}
-                          >
-                            <space.icon className="h-8 w-8 text-white" />
-                          </div>
-
-                          <div>
-                            <h3 className="text-lg font-semibold text-slate-900 mb-2">{space.name}</h3>
-                            <p className="text-sm text-slate-600 mb-3">{space.description}</p>
-
-                            <div className="space-y-2 text-xs text-slate-500">
-                              <div className="flex items-center space-x-2">
-                                <Users className="h-3 w-3" />
-                                <span>{space.capacity}</span>
-                              </div>
-                              <div className="flex items-center space-x-2">
-                                <Clock className="h-3 w-3" />
-                                <span>{space.hours}</span>
-                              </div>
-                              <div className="flex items-center space-x-2">
-                                <span className="font-medium text-green-600">{space.price}</span>
-                              </div>
-                            </div>
-                          </div>
-
-                          <Button className={`w-full bg-gradient-to-r ${space.color} hover:opacity-90 text-white shadow-lg hover:shadow-xl transition-all duration-300`}>
-                            <Plus className="h-4 w-4 mr-2" />
-                            Reservar
-                          </Button>
-                        </div>
+                  {loadingSpaces ? (
+                    <Card className="shadow-lg border border-border bg-white dark:bg-black">
+                      <CardContent className="p-8 text-slate-600 dark:text-slate-300">
+                        Cargando áreas...
                       </CardContent>
                     </Card>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Modal como componente */}
-            <ReservationFormModal
-              open={showReservationForm}
-              selectedSpace={selectedSpace}
-              selectedDate={selectedDate}
-              setSelectedDate={setSelectedDate}
-              selectedTimeSlot={selectedTimeSlot}
-              setSelectedTimeSlot={setSelectedTimeSlot}
-              currentMonth={currentMonth}
-              setCurrentMonth={setCurrentMonth}
-              customStartTime={customStartTime}
-              setCustomStartTime={setCustomStartTime}
-              customEndTime={customEndTime}
-              setCustomEndTime={setCustomEndTime}
-              reservationForm={reservationForm}
-              setReservationForm={setReservationForm}
-              getAvailableTimeSlots={getAvailableTimeSlots}
-              renderCalendar={renderCalendar}
-              userName={userName}
-              savingReservation={savingReservation}
-              onSubmit={handleReservationSubmit}
-              onClose={closeModal}
-            />
-
-            {/* Mis Reservas */}
-            <div className="space-y-6">
-              <div className="flex flex-col sm:flex-row gap-4 mb-6">
-                <div className="flex-1 relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 h-4 w-4" />
-                  <Input
-                    placeholder="Buscar reservas por espacio o motivo..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-10 bg-white/80 backdrop-blur-sm border-orange-200"
-                  />
-                </div>
-
-                <Select value={filterStatus} onValueChange={setFilterStatus}>
-                  <SelectTrigger className="w-full sm:w-48 bg-white/80 border-orange-200">
-                    <Filter className="h-4 w-4 mr-2" />
-                    <SelectValue placeholder="Estado" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todos los estados</SelectItem>
-                    <SelectItem value="pending">Pendientes</SelectItem>
-                    <SelectItem value="confirmed">Confirmadas</SelectItem>
-                    <SelectItem value="completed">Completadas</SelectItem>
-                    <SelectItem value="cancelled">Canceladas</SelectItem>
-                  </SelectContent>
-                </Select>
-
-                <Select value={filterSpace} onValueChange={setFilterSpace}>
-                  <SelectTrigger className="w-full sm:w-48 bg-white/80 border-orange-200">
-                    <SelectValue placeholder="Espacio" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todos los espacios</SelectItem>
-                    {spaces.map((space) => (
-                      <SelectItem key={space.id} value={String(space.id)}>
-                        {space.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <h2 className="text-2xl font-bold bg-gradient-to-r from-orange-600 to-pink-600 bg-clip-text text-transparent">
-                Mis Reservas ({filteredReservations.length})
-              </h2>
-
-              {loadingReservations ? (
-                <Card className="shadow-lg border-0 bg-white/90 backdrop-blur-xl">
-                  <CardContent className="p-12 text-center text-slate-600">
-                    Cargando reservas...
-                  </CardContent>
-                </Card>
-              ) : filteredReservations.length === 0 ? (
-                <Card className="shadow-lg border-0 bg-white/90 backdrop-blur-xl">
-                  <CardContent className="p-12 text-center">
-                    <CalendarDays className="h-16 w-16 text-slate-300 mx-auto mb-4" />
-                    <h3 className="text-lg font-semibold text-slate-600 mb-2">
-                      No se encontraron reservas
-                    </h3>
-                    <p className="text-slate-500">
-                      {searchTerm || filterStatus !== "all" || filterSpace !== "all"
-                        ? "Intenta ajustar los filtros de búsqueda"
-                        : "Realiza tu primera reserva de un espacio común"}
-                    </p>
-                  </CardContent>
-                </Card>
-              ) : (
-                <div className="space-y-4">
-                  {filteredReservations.map((reservation) => {
-                    const space = spaces.find(
-                      (s) => String(s.id) === String(reservation.spaceId)
-                    );
-                    const Icon = space?.icon || CalendarDays;
-
-                    return (
-                      <Card
-                        key={reservation.id}
-                        className="shadow-lg border-0 bg-white/90 backdrop-blur-xl hover:shadow-xl transition-all duration-300 hover:scale-[1.01]"
-                      >
-                        <CardContent className="p-6">
-                          <div className="flex items-start justify-between gap-4">
-                            <div className="flex items-start space-x-4 flex-1">
+                  ) : spaces.length === 0 ? (
+                    <Card className="shadow-lg border border-border bg-white dark:bg-black">
+                      <CardContent className="p-8 text-slate-600 dark:text-slate-300">
+                        No hay áreas activas para reservar.
+                      </CardContent>
+                    </Card>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                      {spaces.map((space) => (
+                        <Card
+                          key={space.id}
+                          className="shadow-lg border border-border bg-white dark:bg-black hover:shadow-xl transition-all duration-300 hover:scale-[1.02] cursor-pointer"
+                          onClick={() => handleSpaceSelect(space)}
+                        >
+                          <CardContent className="p-6">
+                            <div className="space-y-4">
                               <div
-                                className={`w-12 h-12 bg-gradient-to-br ${
-                                  space?.color || "from-gray-400 to-slate-600"
-                                } rounded-full flex items-center justify-center flex-shrink-0 shadow-lg`}
+                                className={`w-16 h-16 bg-gradient-to-br ${space.color} rounded-xl flex items-center justify-center shadow-lg`}
                               >
-                                <Icon className="h-6 w-6 text-white" />
+                                <space.icon className="h-8 w-8 text-white" />
                               </div>
 
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center space-x-3 mb-2">
-                                  <h3 className="text-lg font-semibold text-slate-900">
-                                    {reservation.spaceName}
-                                  </h3>
-                                  <Badge className={getStatusColor(reservation.status)}>
-                                    {getStatusText(reservation.status)}
-                                  </Badge>
-                                </div>
+                              <div>
+                                <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-2">
+                                  {space.name}
+                                </h3>
+                                <p className="text-sm text-slate-600 dark:text-slate-300 mb-3">
+                                  {space.description}
+                                </p>
 
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm text-slate-600 mb-3">
+                                <div className="space-y-2 text-xs text-slate-500 dark:text-slate-300">
                                   <div className="flex items-center space-x-2">
-                                    <Calendar className="h-4 w-4 text-slate-400" />
-                                    <span>
-                                      {new Date(reservation.date + "T00:00:00").toLocaleDateString("es-CO")}
+                                    <Users className="h-3 w-3" />
+                                    <span>{space.capacity}</span>
+                                  </div>
+                                  <div className="flex items-center space-x-2">
+                                    <Clock className="h-3 w-3" />
+                                    <span>{space.hours}</span>
+                                  </div>
+                                  <div className="flex items-center space-x-2">
+                                    <span className="font-medium text-green-600">
+                                      {space.price}
                                     </span>
                                   </div>
-                                  <div className="flex items-center space-x-2">
-                                    <Clock className="h-4 w-4 text-slate-400" />
-                                    <span>{reservation.timeSlot}</span>
+                                </div>
+                              </div>
+
+                              <Button
+                                className={`w-full bg-gradient-to-r ${space.color} hover:opacity-90 text-white shadow-lg hover:shadow-xl transition-all duration-300`}
+                              >
+                                <Plus className="h-4 w-4 mr-2" />
+                                Reservar
+                              </Button>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Modal */}
+                <ReservationFormModal
+                  open={showReservationForm}
+                  selectedSpace={selectedSpace}
+                  selectedDate={selectedDate}
+                  setSelectedDate={setSelectedDate}
+                  selectedTimeSlot={selectedTimeSlot}
+                  setSelectedTimeSlot={setSelectedTimeSlot}
+                  currentMonth={currentMonth}
+                  setCurrentMonth={setCurrentMonth}
+                  customStartTime={customStartTime}
+                  setCustomStartTime={setCustomStartTime}
+                  customEndTime={customEndTime}
+                  setCustomEndTime={setCustomEndTime}
+                  reservationForm={reservationForm}
+                  setReservationForm={setReservationForm}
+                  getAvailableTimeSlots={getAvailableTimeSlots}
+                  renderCalendar={renderCalendar}
+                  userName={userName}
+                  savingReservation={savingReservation}
+                  onSubmit={handleReservationSubmit}
+                  onClose={closeModal}
+                />
+
+                {/* Mis Reservas */}
+                <div className="space-y-6">
+                  <div className="flex flex-col sm:flex-row gap-4 mb-6">
+                    <div className="flex-1 relative">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 h-4 w-4" />
+                      <Input
+                        placeholder="Buscar reservas por espacio o motivo..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="pl-10 bg-white dark:bg-black border-border"
+                      />
+                    </div>
+
+                    <Select value={filterStatus} onValueChange={setFilterStatus}>
+                      <SelectTrigger className="w-full sm:w-48 bg-white dark:bg-black border-border">
+                        <Filter className="h-4 w-4 mr-2" />
+                        <SelectValue placeholder="Estado" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todos los estados</SelectItem>
+                        <SelectItem value="pending">Pendientes</SelectItem>
+                        <SelectItem value="confirmed">Confirmadas</SelectItem>
+                        <SelectItem value="completed">Completadas</SelectItem>
+                        <SelectItem value="cancelled">Canceladas</SelectItem>
+                      </SelectContent>
+                    </Select>
+
+                    <Select value={filterSpace} onValueChange={setFilterSpace}>
+                      <SelectTrigger className="w-full sm:w-48 bg-white dark:bg-black border-border">
+                        <SelectValue placeholder="Espacio" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todos los espacios</SelectItem>
+                        {spaces.map((space) => (
+                          <SelectItem key={space.id} value={String(space.id)}>
+                            {space.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <h2 className="text-2xl font-bold bg-gradient-to-r from-orange-600 to-pink-600 bg-clip-text text-transparent">
+                    Mis Reservas ({filteredReservations.length})
+                  </h2>
+
+                  {loadingReservations ? (
+                    <Card className="shadow-lg border border-border bg-white dark:bg-black">
+                      <CardContent className="p-12 text-center text-slate-600 dark:text-slate-300">
+                        Cargando reservas...
+                      </CardContent>
+                    </Card>
+                  ) : filteredReservations.length === 0 ? (
+                    <Card className="shadow-lg border border-border bg-white dark:bg-black">
+                      <CardContent className="p-12 text-center">
+                        <CalendarDays className="h-16 w-16 text-slate-300 mx-auto mb-4" />
+                        <h3 className="text-lg font-semibold text-slate-600 dark:text-slate-200 mb-2">
+                          No se encontraron reservas
+                        </h3>
+                        <p className="text-slate-500 dark:text-slate-300">
+                          {searchTerm || filterStatus !== "all" || filterSpace !== "all"
+                            ? "Intenta ajustar los filtros de búsqueda"
+                            : "Realiza tu primera reserva de un espacio común"}
+                        </p>
+                      </CardContent>
+                    </Card>
+                  ) : (
+                    <div className="space-y-4">
+                      {filteredReservations.map((reservation) => {
+                        const space = spaces.find(
+                          (s) => String(s.id) === String(reservation.spaceId)
+                        );
+                        const Icon = space?.icon || CalendarDays;
+
+                        return (
+                          <Card
+                            key={reservation.id}
+                            className="shadow-lg border border-border bg-white dark:bg-black hover:shadow-xl transition-all duration-300 hover:scale-[1.01]"
+                          >
+                            <CardContent className="p-6">
+                              <div className="flex items-start justify-between gap-4">
+                                <div className="flex items-start space-x-4 flex-1">
+                                  <div
+                                    className={`w-12 h-12 bg-gradient-to-br ${
+                                      space?.color || "from-gray-400 to-slate-600"
+                                    } rounded-full flex items-center justify-center flex-shrink-0 shadow-lg`}
+                                  >
+                                    <Icon className="h-6 w-6 text-white" />
                                   </div>
-                                  <div className="flex items-center space-x-2">
-                                    <Users className="h-4 w-4 text-slate-400" />
-                                    <span>{reservation.guests} invitados</span>
+
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center space-x-3 mb-2">
+                                      <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
+                                        {reservation.spaceName}
+                                      </h3>
+                                      <Badge className={getStatusColor(reservation.status)}>
+                                        {getStatusText(reservation.status)}
+                                      </Badge>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm text-slate-600 dark:text-slate-300 mb-3">
+                                      <div className="flex items-center space-x-2">
+                                        <Calendar className="h-4 w-4 text-slate-400" />
+                                        <span>
+                                          {new Date(
+                                            reservation.date + "T00:00:00"
+                                          ).toLocaleDateString("es-CO")}
+                                        </span>
+                                      </div>
+                                      <div className="flex items-center space-x-2">
+                                        <Clock className="h-4 w-4 text-slate-400" />
+                                        <span>{reservation.timeSlot}</span>
+                                      </div>
+                                      <div className="flex items-center space-x-2">
+                                        <Users className="h-4 w-4 text-slate-400" />
+                                        <span>{reservation.guests} invitados</span>
+                                      </div>
+                                    </div>
+
+                                    {reservation._cargoValor != null && (
+                                      <p className="text-xs text-slate-600 dark:text-slate-300">
+                                        Cargo:{" "}
+                                        <span className="font-semibold">
+                                          $
+                                          {Number(reservation._cargoValor).toLocaleString(
+                                            "es-CO"
+                                          )}
+                                        </span>{" "}
+                                        ({reservation._cargoEstado || "pendiente"})
+                                      </p>
+                                    )}
+
+                                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                                      Solicitada el{" "}
+                                      {reservation.createdDate
+                                        ? new Date(
+                                            reservation.createdDate + "T00:00:00"
+                                          ).toLocaleDateString("es-CO")
+                                        : ""}
+                                    </p>
                                   </div>
                                 </div>
 
-                                {reservation._cargoValor != null && (
-                                  <p className="text-xs text-slate-600">
-                                    Cargo:{" "}
-                                    <span className="font-semibold">
-                                      ${Number(reservation._cargoValor).toLocaleString("es-CO")}
-                                    </span>{" "}
-                                    ({reservation._cargoEstado || "pendiente"})
-                                  </p>
-                                )}
+                                <div className="flex flex-col gap-2 items-end">
+                                  {(reservation.status === "pending" ||
+                                    reservation.status === "confirmed") && (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => handleCancelReservation(reservation.id)}
+                                      className="border-red-200 hover:bg-red-50 text-red-600 dark:hover:bg-red-950/30"
+                                    >
+                                      <XCircle className="h-4 w-4 mr-1" />
+                                      Cancelar
+                                    </Button>
+                                  )}
 
-                                <p className="text-xs text-slate-500 mt-1">
-                                  Solicitada el{" "}
-                                  {reservation.createdDate
-                                    ? new Date(reservation.createdDate + "T00:00:00").toLocaleDateString("es-CO")
-                                    : ""}
-                                </p>
+                                  {shouldShowPayButton(reservation) && (
+                                    <Button
+                                      size="sm"
+                                      onClick={() => handlePayReservation(reservation)}
+                                      className="bg-gradient-to-r from-blue-500 to-indigo-600 text-white hover:opacity-90"
+                                    >
+                                      <CheckCircle className="h-4 w-4 mr-1" />
+                                      Pagar
+                                    </Button>
+                                  )}
+                                </div>
                               </div>
-                            </div>
-
-                            <div className="flex flex-col gap-2 items-end">
-                              {(reservation.status === "pending" || reservation.status === "confirmed") && (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => handleCancelReservation(reservation.id)}
-                                  className="border-red-200 hover:bg-red-50 text-red-600"
-                                >
-                                  <XCircle className="h-4 w-4 mr-1" />
-                                  Cancelar
-                                </Button>
-                              )}
-
-                              {shouldShowPayButton(reservation) && (
-                                <Button
-                                  size="sm"
-                                  onClick={() => handlePayReservation(reservation)}
-                                  className="bg-gradient-to-r from-blue-500 to-indigo-600 text-white hover:opacity-90"
-                                >
-                                  <CheckCircle className="h-4 w-4 mr-1" />
-                                  Pagar
-                                </Button>
-                              )}
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    );
-                  })}
+                            </CardContent>
+                          </Card>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
-              )}
+              </div>
             </div>
           </main>
         </div>

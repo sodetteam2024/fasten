@@ -119,7 +119,7 @@
   }
 
   body {
-    @apply text-foreground min-h-screen;
+    @apply text-foreground bg-background;
     background-image: var(--bg-image);
     background-size: cover;
     background-position: center;
