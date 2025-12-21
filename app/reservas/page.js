@@ -242,7 +242,7 @@ export default function ReservationsPage() {
                   ? `$${a.valor_hora.toLocaleString("es-CO")}/hora`
                   : "Gratuito",
               valor_hora: a.valor_hora,
-              color: "from-orange-400 to-pink-500",
+              color: "from-[#7b2ae6] to-[#f9b009]",
               timeSlots: [
                 "6:00 AM - 8:00 AM",
                 "8:00 AM - 10:00 AM",
@@ -306,10 +306,10 @@ export default function ReservationsPage() {
           estado === "confirmada"
             ? "confirmed"
             : estado === "cancelada"
-            ? "cancelled"
-            : estado === "completada"
-            ? "completed"
-            : "pending";
+              ? "cancelled"
+              : estado === "completada"
+                ? "completed"
+                : "pending";
 
         const timeSlot = `${new Date(r.fecha_ini).toLocaleTimeString("es-CO", {
           hour: "2-digit",
@@ -442,7 +442,7 @@ export default function ReservationsPage() {
 
       if (cargo?.id) cargoId = cargo.id;
       if (cargo?.valor != null) cargoValor = cargo.valor;
-    } catch {}
+    } catch { }
 
     setReservations((prev) => [
       {
@@ -642,15 +642,14 @@ export default function ReservationsPage() {
           key={day}
           onClick={() => available && setSelectedDate(date)}
           disabled={!available}
-          className={`h-10 w-10 rounded-lg text-sm font-medium transition-all duration-200 ${
-            isSelected
-              ? "bg-gradient-to-r from-orange-400 to-pink-500 text-white shadow-lg"
+          className={`h-10 w-10 rounded-lg text-sm font-medium transition-all duration-200 ${isSelected
+              ? "bg-gradient-to-r from-[#7b2ae6] to-[#f9b009] text-white shadow-lg"
               : isToday
-              ? "bg-gradient-to-r from-blue-100 to-cyan-100 text-blue-700 border border-blue-200"
-              : available
-              ? "hover:bg-gradient-to-r hover:from-orange-100 hover:to-pink-100 text-slate-700 dark:text-slate-200"
-              : "text-slate-300 cursor-not-allowed"
-          }`}
+                ? "bg-gradient-to-r from-blue-100 to-cyan-100 text-blue-700 border border-blue-200"
+                : available
+                  ? "hover:bg-gradient-to-r hover:from-[#7b2ae6]/10 hover:to-[#f9b009]/10 text-slate-700 dark:text-slate-200"
+                  : "text-slate-300 cursor-not-allowed"
+            }`}
         >
           {day}
         </button>
@@ -670,15 +669,14 @@ export default function ReservationsPage() {
       </SignedOut>
 
       <SignedIn>
-        {/* ✅ Fondo según tema (blanco/negro) */}
         <div className="min-h-screen bg-background text-foreground">
-          {/* ✅ Panel contenedor (blanco en claro / negro en oscuro) */}
           <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-            <div className="rounded-3xl border border-border bg-white text-black dark:bg-black dark:text-white shadow-sm">
+            {/* ✅ ÚNICO contenedor flotante */}
+            <div className="rounded-3xl border border-black/10 dark:border-white/10 bg-white/92 dark:bg-black/80 backdrop-blur-xl shadow-[0_25px_80px_rgba(0,0,0,0.55)] p-6 sm:p-8">
               <div className="p-6 sm:p-8">
                 {/* Header */}
                 <div className="mb-8">
-                  <h1 className="text-4xl font-bold bg-gradient-to-r from-orange-600 via-pink-600 to-purple-600 bg-clip-text text-transparent mb-2">
+                  <h1 className="text-4xl font-bold bg-gradient-to-r from-[#7b2ae6] to-[#f9b009] bg-clip-text text-transparent mb-2">
                     Reservas de Espacios
                   </h1>
                   <p className="text-slate-600 dark:text-slate-300">
@@ -688,7 +686,7 @@ export default function ReservationsPage() {
 
                 {/* Available Spaces */}
                 <div className="mb-12">
-                  <h2 className="text-2xl font-bold bg-gradient-to-r from-orange-600 to-pink-600 bg-clip-text text-transparent mb-6">
+                  <h2 className="text-2xl font-bold bg-gradient-to-r from-[#7b2ae6] to-[#f9b009] bg-clip-text text-transparent mb-6">
                     Espacios Disponibles
                   </h2>
 
@@ -714,9 +712,7 @@ export default function ReservationsPage() {
                         >
                           <CardContent className="p-6">
                             <div className="space-y-4">
-                              <div
-                                className={`w-16 h-16 bg-gradient-to-br ${space.color} rounded-xl flex items-center justify-center shadow-lg`}
-                              >
+                              <div className={`w-16 h-16 bg-gradient-to-br ${space.color} rounded-xl flex items-center justify-center shadow-lg`}>
                                 <space.icon className="h-8 w-8 text-white" />
                               </div>
 
@@ -746,8 +742,9 @@ export default function ReservationsPage() {
                               </div>
 
                               <Button
-                                className={`w-full bg-gradient-to-r ${space.color} hover:opacity-90 text-white shadow-lg hover:shadow-xl transition-all duration-300`}
+                                className={`w-full bg-gradient-to-r ${space.color} text-white shadow-[0_14px_40px_rgba(0,0,0,0.35)] hover:opacity-95 hover:shadow-[0_18px_55px_rgba(0,0,0,0.45)] transition-all duration-300`}
                               >
+
                                 <Plus className="h-4 w-4 mr-2" />
                                 Reservar
                               </Button>
@@ -825,7 +822,7 @@ export default function ReservationsPage() {
                     </Select>
                   </div>
 
-                  <h2 className="text-2xl font-bold bg-gradient-to-r from-orange-600 to-pink-600 bg-clip-text text-transparent">
+                  <h2 className="text-2xl font-bold bg-gradient-to-r from-[#7b2ae6] to-[#f9b009] bg-clip-text text-transparent">
                     Mis Reservas ({filteredReservations.length})
                   </h2>
 
@@ -866,9 +863,8 @@ export default function ReservationsPage() {
                               <div className="flex items-start justify-between gap-4">
                                 <div className="flex items-start space-x-4 flex-1">
                                   <div
-                                    className={`w-12 h-12 bg-gradient-to-br ${
-                                      space?.color || "from-gray-400 to-slate-600"
-                                    } rounded-full flex items-center justify-center flex-shrink-0 shadow-lg`}
+                                    className={`w-12 h-12 bg-gradient-to-br ${space?.color || "from-[#7b2ae6] to-[#f9b009]"
+                                      } rounded-full flex items-center justify-center flex-shrink-0 shadow-lg`}
                                   >
                                     <Icon className="h-6 w-6 text-white" />
                                   </div>
@@ -919,8 +915,8 @@ export default function ReservationsPage() {
                                       Solicitada el{" "}
                                       {reservation.createdDate
                                         ? new Date(
-                                            reservation.createdDate + "T00:00:00"
-                                          ).toLocaleDateString("es-CO")
+                                          reservation.createdDate + "T00:00:00"
+                                        ).toLocaleDateString("es-CO")
                                         : ""}
                                     </p>
                                   </div>
@@ -929,22 +925,22 @@ export default function ReservationsPage() {
                                 <div className="flex flex-col gap-2 items-end">
                                   {(reservation.status === "pending" ||
                                     reservation.status === "confirmed") && (
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      onClick={() => handleCancelReservation(reservation.id)}
-                                      className="border-red-200 hover:bg-red-50 text-red-600 dark:hover:bg-red-950/30"
-                                    >
-                                      <XCircle className="h-4 w-4 mr-1" />
-                                      Cancelar
-                                    </Button>
-                                  )}
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => handleCancelReservation(reservation.id)}
+                                        className="border-red-200 hover:bg-red-50 text-red-600 dark:hover:bg-red-950/30"
+                                      >
+                                        <XCircle className="h-4 w-4 mr-1" />
+                                        Cancelar
+                                      </Button>
+                                    )}
 
                                   {shouldShowPayButton(reservation) && (
                                     <Button
                                       size="sm"
                                       onClick={() => handlePayReservation(reservation)}
-                                      className="bg-gradient-to-r from-blue-500 to-indigo-600 text-white hover:opacity-90"
+                                      className="bg-gradient-to-r from-[#7b2ae6] to-[#f9b009] text-white hover:opacity-95 shadow-lg"
                                     >
                                       <CheckCircle className="h-4 w-4 mr-1" />
                                       Pagar

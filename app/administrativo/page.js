@@ -27,7 +27,7 @@ export default function PanelAdministrativo() {
           mx-auto max-w-7xl
           rounded-2xl
           border border-white/10
-          bg-white/90 dark:bg-black/80
+          bg-white/92 dark:bg-black/85
           backdrop-blur-xl
           shadow-[0_25px_80px_rgba(0,0,0,0.55)]
           p-6 sm:p-8

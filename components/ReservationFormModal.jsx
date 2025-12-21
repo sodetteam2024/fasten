@@ -1,12 +1,6 @@
 "use client";
 
-import {
-  ChevronLeft,
-  ChevronRight,
-  Clock,
-  X,
-  CheckCircle,
-} from "lucide-react";
+import { ChevronLeft, ChevronRight, Clock, X, CheckCircle } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -38,36 +32,59 @@ export default function ReservationFormModal({
 }) {
   if (!open || !selectedSpace) return null;
 
+  const GRAD = "from-[#7b2ae6] to-[#f9b009]";
+
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <Card className="w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl border-0 bg-white/95 backdrop-blur-xl">
-        <CardHeader className="border-b border-orange-200/50">
-          <div className="flex items-center justify-between">
-            <CardTitle className="bg-gradient-to-r from-orange-600 to-pink-600 bg-clip-text text-transparent flex items-center">
-              <selectedSpace.icon className="h-6 w-6 mr-3 text-orange-600" />
-              Reservar {selectedSpace.name}
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/55 backdrop-blur-sm">
+      {/* ✅ Quitamos overflow del Card para evitar doble scroll.
+          El scroll lo maneja SOLO CardContent. */}
+      <Card className="w-full max-w-4xl border border-black/10 dark:border-white/10 bg-white/95 dark:bg-black/80 backdrop-blur-xl shadow-[0_25px_80px_rgba(0,0,0,0.65)]">
+        {/* ✅ Header más bajito */}
+        <CardHeader className="py-3 sm:py-4 px-4 sm:px-6 border-b border-black/10 dark:border-white/10">
+          <div className="flex items-center justify-between gap-3">
+            <CardTitle className="flex items-center gap-2 text-base sm:text-lg font-semibold">
+              <span
+                className={`bg-gradient-to-r ${GRAD} bg-clip-text text-transparent`}
+              >
+                Reservar {selectedSpace.name}
+              </span>
+
+              {/* Icono con gradient (fondo) */}
+              <span
+                className={`ml-1 inline-flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br ${GRAD} shadow`}
+              >
+                <selectedSpace.icon className="h-4 w-4 text-white" />
+              </span>
             </CardTitle>
-            <Button variant="ghost" size="icon" onClick={onClose}>
+
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onClose}
+              className="h-8 w-8 text-foreground/70 hover:text-foreground"
+            >
               <X className="h-5 w-5" />
             </Button>
           </div>
         </CardHeader>
 
-        <CardContent className="p-6">
-          <form onSubmit={onSubmit} className="space-y-6">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        {/* ✅ Un solo scroll aquí */}
+        <CardContent className="p-4 sm:p-6 max-h-[78vh] overflow-y-auto">
+          <form onSubmit={onSubmit} className="space-y-5">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Calendar */}
-              <div className="space-y-4">
-                <h3 className="text-lg font-semibold text-slate-900">
-                  Seleccionar Fecha
+              <div className="space-y-3">
+                <h3 className="text-sm sm:text-base font-semibold text-foreground">
+                  Seleccionar fecha
                 </h3>
 
-                <div className="bg-gradient-to-r from-orange-50 to-pink-50 p-4 rounded-lg">
-                  <div className="flex items-center justify-between mb-4">
+                <div className="rounded-xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 p-3 sm:p-4">
+                  <div className="flex items-center justify-between mb-3">
                     <Button
                       type="button"
                       variant="ghost"
                       size="icon"
+                      className="h-8 w-8"
                       onClick={() =>
                         setCurrentMonth(
                           new Date(
@@ -80,7 +97,7 @@ export default function ReservationFormModal({
                       <ChevronLeft className="h-4 w-4" />
                     </Button>
 
-                    <h4 className="font-semibold text-slate-900">
+                    <h4 className="text-sm font-semibold text-foreground">
                       {currentMonth.toLocaleDateString("es-CO", {
                         month: "long",
                         year: "numeric",
@@ -91,6 +108,7 @@ export default function ReservationFormModal({
                       type="button"
                       variant="ghost"
                       size="icon"
+                      className="h-8 w-8"
                       onClick={() =>
                         setCurrentMonth(
                           new Date(
@@ -109,7 +127,7 @@ export default function ReservationFormModal({
                       (day) => (
                         <div
                           key={day}
-                          className="h-8 flex items-center justify-center text-xs font-medium text-slate-600"
+                          className="h-7 flex items-center justify-center text-[11px] font-medium text-muted-foreground"
                         >
                           {day}
                         </div>
@@ -121,9 +139,11 @@ export default function ReservationFormModal({
                 </div>
 
                 {selectedDate && (
-                  <div className="bg-blue-50 p-3 rounded-lg">
-                    <p className="text-sm font-medium text-blue-900">
-                      Fecha seleccionada:{" "}
+                  <div className="rounded-xl border border-black/10 dark:border-white/10 bg-white/60 dark:bg-white/5 p-3">
+                    <p className="text-xs sm:text-sm font-medium text-foreground">
+                      <span className="text-muted-foreground">
+                        Fecha seleccionada:
+                      </span>{" "}
                       {new Date(selectedDate + "T00:00:00").toLocaleDateString(
                         "es-CO",
                         {
@@ -142,28 +162,26 @@ export default function ReservationFormModal({
               <div className="space-y-4">
                 {selectedDate && (
                   <div>
-                    <h3 className="text-lg font-semibold text-slate-900 mb-3">
+                    <h3 className="text-sm sm:text-base font-semibold text-foreground mb-2">
                       Horarios
                     </h3>
 
                     {/* Slots sugeridos */}
                     <div className="mb-4">
-                      <h4 className="text-sm font-medium text-slate-700 mb-2">
-                        Horarios Sugeridos
+                      <h4 className="text-xs font-medium text-muted-foreground mb-2">
+                        Horarios sugeridos
                       </h4>
 
-                      <div className="grid grid-cols-1 gap-2 max-h-32 overflow-y-auto">
+                      <div className="grid grid-cols-1 gap-2 max-h-32 overflow-y-auto pr-1">
                         {getAvailableTimeSlots(selectedDate).map((slot) => (
                           <Button
                             key={slot}
                             type="button"
-                            variant={
-                              selectedTimeSlot === slot ? "default" : "outline"
-                            }
-                            className={`justify-start text-sm ${
+                            variant="outline"
+                            className={`justify-start text-xs sm:text-sm border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 hover:bg-white/85 dark:hover:bg-white/10 ${
                               selectedTimeSlot === slot
-                                ? "bg-gradient-to-r from-orange-400 to-pink-500 text-white"
-                                : "border-orange-200 hover:bg-orange-50"
+                                ? `bg-gradient-to-r ${GRAD} text-white border-transparent hover:opacity-95`
+                                : ""
                             }`}
                             onClick={() => setSelectedTimeSlot(slot)}
                           >
@@ -176,33 +194,40 @@ export default function ReservationFormModal({
 
                     {/* Personalizado */}
                     <div className="space-y-3">
-                      <h4 className="text-sm font-medium text-slate-700">
-                        Horario Personalizado
+                      <h4 className="text-xs font-medium text-muted-foreground">
+                        Horario personalizado
                       </h4>
 
                       <div className="grid grid-cols-2 gap-3">
                         <div className="space-y-1">
-                          <Label htmlFor="startTime" className="text-xs">
-                            Hora de Inicio
+                          <Label
+                            htmlFor="startTime"
+                            className="text-[11px] text-muted-foreground"
+                          >
+                            Hora inicio
                           </Label>
                           <Input
                             id="startTime"
                             type="time"
                             value={customStartTime}
                             onChange={(e) => setCustomStartTime(e.target.value)}
-                            className="bg-white/80 border-orange-200"
+                            className="h-9 bg-white/70 dark:bg-white/5 border-black/10 dark:border-white/10"
                           />
                         </div>
+
                         <div className="space-y-1">
-                          <Label htmlFor="endTime" className="text-xs">
-                            Hora de Fin
+                          <Label
+                            htmlFor="endTime"
+                            className="text-[11px] text-muted-foreground"
+                          >
+                            Hora fin
                           </Label>
                           <Input
                             id="endTime"
                             type="time"
                             value={customEndTime}
                             onChange={(e) => setCustomEndTime(e.target.value)}
-                            className="bg-white/80 border-orange-200"
+                            className="h-9 bg-white/70 dark:bg-white/5 border-black/10 dark:border-white/10"
                           />
                         </div>
                       </div>
@@ -217,19 +242,20 @@ export default function ReservationFormModal({
                               `${customStartTime} - ${customEndTime}`
                             )
                           }
-                          className="w-full border-blue-200 hover:bg-blue-50 text-blue-700"
+                          className="w-full text-xs border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 hover:bg-white/85 dark:hover:bg-white/10"
                         >
-                          Usar Horario Personalizado: {customStartTime} -{" "}
-                          {customEndTime}
+                          Usar: {customStartTime} - {customEndTime}
                         </Button>
                       )}
                     </div>
                   </div>
                 )}
 
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="guests">Número de Invitados</Label>
+                <div className="space-y-3">
+                  <div className="space-y-1">
+                    <Label htmlFor="guests" className="text-xs text-muted-foreground">
+                      Número de invitados
+                    </Label>
                     <Input
                       id="guests"
                       type="number"
@@ -246,12 +272,14 @@ export default function ReservationFormModal({
                       }}
                       placeholder="Ej: 10"
                       min="1"
-                      className="bg-white/80 border-orange-200"
+                      className="h-9 bg-white/70 dark:bg-white/5 border-black/10 dark:border-white/10"
                     />
                   </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="purpose">Motivo de la Reserva *</Label>
+                  <div className="space-y-1">
+                    <Label htmlFor="purpose" className="text-xs text-muted-foreground">
+                      Motivo de la reserva *
+                    </Label>
                     <Input
                       id="purpose"
                       value={reservationForm.purpose}
@@ -263,12 +291,14 @@ export default function ReservationFormModal({
                       }
                       required
                       placeholder="Ej: Cumpleaños, Reunión familiar"
-                      className="bg-white/80 border-orange-200"
+                      className="h-9 bg-white/70 dark:bg-white/5 border-black/10 dark:border-white/10"
                     />
                   </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="notes">Notas Adicionales</Label>
+                  <div className="space-y-1">
+                    <Label htmlFor="notes" className="text-xs text-muted-foreground">
+                      Notas adicionales
+                    </Label>
                     <Textarea
                       id="notes"
                       value={reservationForm.notes}
@@ -280,7 +310,7 @@ export default function ReservationFormModal({
                       }
                       placeholder="Información adicional..."
                       rows={3}
-                      className="bg-white/80 border-orange-200"
+                      className="bg-white/70 dark:bg-white/5 border-black/10 dark:border-white/10"
                     />
                   </div>
                 </div>
@@ -288,20 +318,28 @@ export default function ReservationFormModal({
             </div>
 
             {/* Resumen */}
-            <div className="bg-blue-50 p-4 rounded-lg">
-              <h4 className="font-semibold text-blue-900 mb-2">
-                Resumen de Reserva
+            <div className="rounded-xl border border-black/10 dark:border-white/10 bg-white/60 dark:bg-white/5 p-4">
+              <h4 className="text-sm font-semibold text-foreground mb-2">
+                Resumen de reserva
               </h4>
-              <div className="space-y-1 text-sm text-blue-800">
+              <div className="space-y-1 text-xs sm:text-sm text-foreground/90">
                 <p>
-                  <strong>Solicitante:</strong> {userName}
+                  <span className="text-muted-foreground font-medium">
+                    Solicitante:
+                  </span>{" "}
+                  {userName}
                 </p>
                 <p>
-                  <strong>Espacio:</strong> {selectedSpace.name}
+                  <span className="text-muted-foreground font-medium">
+                    Espacio:
+                  </span>{" "}
+                  {selectedSpace.name}
                 </p>
                 {selectedDate && (
                   <p>
-                    <strong>Fecha:</strong>{" "}
+                    <span className="text-muted-foreground font-medium">
+                      Fecha:
+                    </span>{" "}
                     {new Date(selectedDate + "T00:00:00").toLocaleDateString(
                       "es-CO"
                     )}
@@ -309,27 +347,31 @@ export default function ReservationFormModal({
                 )}
                 {selectedTimeSlot && (
                   <p>
-                    <strong>Horario:</strong> {selectedTimeSlot}
+                    <span className="text-muted-foreground font-medium">
+                      Horario:
+                    </span>{" "}
+                    {selectedTimeSlot}
                   </p>
                 )}
               </div>
             </div>
 
-            <div className="flex gap-4">
+            {/* Acciones */}
+            <div className="flex gap-3">
               <Button
                 type="submit"
-                className="flex-1 bg-gradient-to-r from-green-500 to-emerald-600 text-white"
+                className={`flex-1 bg-gradient-to-r ${GRAD} text-white hover:opacity-95 shadow-lg`}
                 disabled={!selectedDate || !selectedTimeSlot || savingReservation}
               >
                 <CheckCircle className="h-4 w-4 mr-2" />
-                {savingReservation ? "Creando..." : "Confirmar Reserva"}
+                {savingReservation ? "Creando..." : "Confirmar reserva"}
               </Button>
 
               <Button
                 type="button"
                 variant="outline"
                 onClick={onClose}
-                className="border-orange-200 hover:bg-orange-50"
+                className="border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 hover:bg-white/85 dark:hover:bg-white/10"
               >
                 Cancelar
               </Button>

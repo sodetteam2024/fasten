@@ -1,3 +1,4 @@
+// components/Carousel.jsx
 "use client";
 
 import { useState, useEffect, useRef } from "react";
@@ -17,10 +18,8 @@ export default function Carousel() {
   const [roleId, setRoleId] = useState(null);
 
   const canEditCarousel = roleId === 1 || roleId === 2;
-
   const timerRef = useRef(null);
 
-  // 🔹 Cargar rol desde "usuarios"
   useEffect(() => {
     if (!user) return;
 
@@ -31,15 +30,12 @@ export default function Carousel() {
         .eq("clerk_id", user.id)
         .single();
 
-      if (!error && data) {
-        setRoleId(data.idrol);
-      }
+      if (!error && data) setRoleId(data.idrol);
     };
 
     fetchRole();
   }, [user]);
 
-  // 🔹 Cargar slides desde BD + Storage
   useEffect(() => {
     const loadSlides = async () => {
       const { data, error } = await supabase
@@ -59,9 +55,7 @@ export default function Carousel() {
             .from("carousel")
             .createSignedUrl(row.image_path, 3600);
 
-          if (errSigned) {
-            console.error("Error creando signed URL:", errSigned);
-          }
+          if (errSigned) console.error("Error creando signed URL:", errSigned);
 
           return {
             id: row.id_slide,
@@ -80,7 +74,6 @@ export default function Carousel() {
     loadSlides();
   }, []);
 
-  // ✅ Autoplay cada 4 segundos
   useEffect(() => {
     if (timerRef.current) {
       clearInterval(timerRef.current);
@@ -103,28 +96,14 @@ export default function Carousel() {
     };
   }, [loading, isEditing, slides]);
 
-  // Evitar que current quede fuera si cambian slides
   useEffect(() => {
-    if (!slides.length) {
-      setCurrent(0);
-      return;
-    }
-    if (current > slides.length - 1) {
-      setCurrent(0);
-    }
+    if (!slides.length) return setCurrent(0);
+    if (current > slides.length - 1) setCurrent(0);
   }, [slides, current]);
 
-  const prev = () => {
-    if (!slides.length) return;
-    setCurrent((c) => (c - 1 + slides.length) % slides.length);
-  };
+  const prev = () => slides.length && setCurrent((c) => (c - 1 + slides.length) % slides.length);
+  const next = () => slides.length && setCurrent((c) => (c + 1) % slides.length);
 
-  const next = () => {
-    if (!slides.length) return;
-    setCurrent((c) => (c + 1) % slides.length);
-  };
-
-  // 🔹 Añadir imágenes (preview inmediato + subida en background)
   const handleAddImages = (e) => {
     if (!canEditCarousel) return;
 
@@ -146,12 +125,7 @@ export default function Carousel() {
 
       setSlides((prevState) => [
         ...prevState,
-        {
-          id: tempId,
-          path: null,
-          url: previewUrl,
-          pending: true,
-        },
+        { id: tempId, path: null, url: previewUrl, pending: true },
       ]);
 
       (async () => {
@@ -161,10 +135,7 @@ export default function Carousel() {
             : "";
           const path = `slides/${Date.now()}_${index}${ext ? "." + ext : ""}`;
 
-          const { error: errUpload } = await supabase.storage
-            .from("carousel")
-            .upload(path, file);
-
+          const { error: errUpload } = await supabase.storage.from("carousel").upload(path, file);
           if (errUpload) {
             console.error("Error subiendo archivo:", errUpload);
             alert("Error subiendo una imagen al servidor.");
@@ -188,35 +159,13 @@ export default function Carousel() {
             return;
           }
 
-          const { data: signed, error: errSigned } = await supabase.storage
-            .from("carousel")
-            .createSignedUrl(path, 3600);
-
-          if (errSigned || !signed) {
-            console.error("Error creando signed URL:", errSigned);
-            alert("La imagen se guardó, pero no se pudo mostrar la vista previa.");
-            URL.revokeObjectURL(previewUrl);
-            setSlides((prevState) =>
-              prevState.map((s) =>
-                s.id === tempId
-                  ? { ...s, id: row.id_slide, path, url: "", pending: false }
-                  : s
-              )
-            );
-            return;
-          }
+          const { data: signed } = await supabase.storage.from("carousel").createSignedUrl(path, 3600);
 
           URL.revokeObjectURL(previewUrl);
           setSlides((prevState) =>
             prevState.map((s) =>
               s.id === tempId
-                ? {
-                    ...s,
-                    id: row.id_slide,
-                    path,
-                    url: signed.signedUrl,
-                    pending: false,
-                  }
+                ? { ...s, id: row.id_slide, path, url: signed?.signedUrl || "", pending: false }
                 : s
             )
           );
@@ -232,7 +181,6 @@ export default function Carousel() {
     e.target.value = "";
   };
 
-  // 🔹 Eliminar imagen (también en Supabase)
   const handleRemoveImage = async (id) => {
     if (!canEditCarousel) return;
 
@@ -247,9 +195,7 @@ export default function Carousel() {
 
     try {
       await supabase.from("carousel_slides").delete().eq("id_slide", id);
-      if (slide.path) {
-        await supabase.storage.from("carousel").remove([slide.path]);
-      }
+      if (slide.path) await supabase.storage.from("carousel").remove([slide.path]);
     } catch (err) {
       console.error("Error borrando slide:", err);
       alert("No se pudo borrar la imagen del servidor.");
@@ -258,15 +204,10 @@ export default function Carousel() {
 
     setSlides((prevState) => {
       const indexToRemove = prevState.findIndex((s) => s.id === id);
-      if (indexToRemove === -1) return prevState;
-
       const newSlides = prevState.filter((s) => s.id !== id);
 
-      if (!newSlides.length) {
-        setCurrent(0);
-      } else if (indexToRemove <= current) {
-        setCurrent((c) => (c === 0 ? 0 : c - 1));
-      }
+      if (!newSlides.length) setCurrent(0);
+      else if (indexToRemove <= current) setCurrent((c) => (c === 0 ? 0 : c - 1));
 
       return newSlides;
     });
@@ -274,24 +215,21 @@ export default function Carousel() {
 
   return (
     <div className="w-full">
-      {/* Panel de edición (solo Admin / SuperAdmin) */}
       {isEditing && canEditCarousel && (
-        <div className="mb-4 rounded-2xl border border-slate-200 bg-white/95 p-4 shadow">
+        <div className="mb-4 rounded-2xl border border-black/10 dark:border-white/10 bg-white/90 dark:bg-black/75 backdrop-blur-xl p-4 shadow-[0_18px_55px_rgba(0,0,0,0.45)]">
           <div className="mb-3 flex items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold text-slate-800">
-              Gestionar imágenes del carrusel
-            </h2>
+            <h2 className="text-sm font-semibold text-foreground">Gestionar imágenes del carrusel</h2>
             <button
               onClick={() => setIsEditing(false)}
-              className="text-xs font-medium text-slate-500 hover:text-slate-800"
+              className="text-xs font-medium text-muted-foreground hover:text-foreground"
             >
               Cerrar
             </button>
           </div>
 
-          <p className="text-xs text-slate-600 mb-2">
+          <p className="text-xs text-muted-foreground mb-2">
             Puedes subir hasta {MAX_SLIDES} imágenes. Actualmente tienes{" "}
-            <span className="font-semibold">{slides.length}</span>.
+            <span className="font-semibold text-foreground">{slides.length}</span>.
           </p>
 
           <input
@@ -299,7 +237,7 @@ export default function Carousel() {
             accept="image/*"
             multiple
             onChange={handleAddImages}
-            className="block w-full text-xs text-slate-700 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-900 file:px-4 file:py-2 file:text-xs file:font-medium file:text-white hover:file:bg-slate-700"
+            className="block w-full text-xs text-foreground file:mr-3 file:rounded-lg file:border-0 file:bg-slate-900 file:px-4 file:py-2 file:text-xs file:font-medium file:text-white hover:file:bg-slate-700 dark:file:bg-white dark:file:text-black dark:hover:file:bg-slate-200"
           />
 
           {slides.length > 0 ? (
@@ -307,7 +245,7 @@ export default function Carousel() {
               {slides.map((slide, index) => (
                 <div
                   key={slide.id}
-                  className="relative overflow-hidden rounded-xl border border-slate-200 bg-white"
+                  className="relative overflow-hidden rounded-xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5"
                 >
                   {slide.url ? (
                     <img
@@ -317,7 +255,7 @@ export default function Carousel() {
                       draggable={false}
                     />
                   ) : (
-                    <div className="flex h-24 w-full items-center justify-center text-[11px] text-slate-500">
+                    <div className="flex h-24 w-full items-center justify-center text-[11px] text-muted-foreground">
                       Sin vista previa
                     </div>
                   )}
@@ -332,7 +270,7 @@ export default function Carousel() {
                   </button>
 
                   {slide.pending && (
-                    <div className="absolute inset-x-0 bottom-0 bg-black/50 px-2 py-1 text-[10px] text-white text-center">
+                    <div className="absolute inset-x-0 bottom-0 bg-black/60 px-2 py-1 text-[10px] text-white text-center">
                       Subiendo...
                     </div>
                   )}
@@ -340,26 +278,24 @@ export default function Carousel() {
               ))}
             </div>
           ) : (
-            <p className="mt-2 text-xs text-slate-500">
+            <p className="mt-2 text-xs text-muted-foreground">
               Aún no has agregado imágenes. Sube algunas desde tu dispositivo.
             </p>
           )}
         </div>
       )}
 
-      {/* Carrusel */}
       <div
-        className={`relative w-full overflow-hidden rounded-2xl bg-white shadow ${
+        className={`relative w-full overflow-hidden rounded-2xl border border-black/10 dark:border-white/10 bg-white/90 dark:bg-black/80 backdrop-blur-xl shadow-[0_25px_80px_rgba(0,0,0,0.55)] ${
           canEditCarousel ? "group" : ""
         }`}
       >
         {loading ? (
-          <div className="flex h-[360px] items-center justify-center text-sm text-slate-500">
+          <div className="flex h-[360px] items-center justify-center text-sm text-muted-foreground">
             Cargando carrusel...
           </div>
         ) : slides.length > 0 ? (
           <>
-            {/* Imagen */}
             {slides[current]?.url ? (
               <div className="relative h-[360px] w-full">
                 <img
@@ -367,55 +303,49 @@ export default function Carousel() {
                   alt={`slide-${current}`}
                   className={
                     "h-[360px] w-full object-cover transition-opacity duration-500 " +
-                    (canEditCarousel
-                      ? "group-hover:brightness-75"
-                      : "")
+                    (canEditCarousel ? "group-hover:brightness-75" : "")
                   }
                   draggable={false}
                 />
-
                 <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/30 via-black/0 to-black/10" />
               </div>
             ) : (
-              <div className="flex h-[360px] items-center justify-center text-sm text-slate-500">
+              <div className="flex h-[360px] items-center justify-center text-sm text-muted-foreground">
                 Imagen sin vista previa
               </div>
             )}
 
-            {/* Botón de editar (solo Admin / SuperAdmin) */}
             {canEditCarousel && (
               <button
                 type="button"
                 onClick={() => setIsEditing(true)}
                 className="pointer-events-auto absolute inset-0 flex items-center justify-center opacity-0 transition group-hover:opacity-100"
               >
-                <div className="flex items-center gap-2 rounded-full bg-white/90 px-4 py-2 text-xs font-medium text-slate-800 shadow-lg backdrop-blur">
+                <div className="flex items-center gap-2 rounded-full bg-white/90 dark:bg-black/70 px-4 py-2 text-xs font-medium text-slate-900 dark:text-white shadow-lg backdrop-blur">
                   <span>Modificar imágenes</span>
                 </div>
               </button>
             )}
 
-            {/* Flechas */}
             {slides.length > 1 && (
               <>
                 <button
                   onClick={prev}
                   aria-label="Anterior"
-                  className="absolute left-3 top-1/2 -translate-y-1/2 rounded-full bg-white/85 p-2 shadow hover:bg-white"
+                  className="absolute left-3 top-1/2 -translate-y-1/2 rounded-full bg-white/85 dark:bg-black/60 p-2 shadow hover:bg-white dark:hover:bg-black/75 text-black dark:text-white"
                 >
                   ‹
                 </button>
                 <button
                   onClick={next}
                   aria-label="Siguiente"
-                  className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-white/85 p-2 shadow hover:bg-white"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-white/85 dark:bg-black/60 p-2 shadow hover:bg-white dark:hover:bg-black/75 text-black dark:text-white"
                 >
                   ›
                 </button>
               </>
             )}
 
-            {/* Dots */}
             {slides.length > 1 && (
               <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-2">
                 {slides.map((_, i) => (
@@ -434,13 +364,13 @@ export default function Carousel() {
             )}
           </>
         ) : (
-          <div className="flex h-[360px] w-full flex-col items-center justify-center gap-2 bg-slate-50 text-center text-sm text-slate-500">
+          <div className="flex h-[360px] w-full flex-col items-center justify-center gap-2 bg-white/70 dark:bg-white/5 text-center text-sm text-muted-foreground">
             <p>No hay imágenes en el carrusel.</p>
             {canEditCarousel && (
               <button
                 type="button"
                 onClick={() => setIsEditing(true)}
-                className="mt-2 rounded-full bg-slate-900 px-4 py-2 text-xs font-medium text-white hover:bg-slate-700"
+                className="mt-2 rounded-full bg-slate-900 px-4 py-2 text-xs font-medium text-white hover:bg-slate-700 dark:bg-white dark:text-black dark:hover:bg-slate-200"
               >
                 Agregar imágenes
               </button>
