@@ -15,6 +15,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
 
+
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -213,6 +214,7 @@ export default function Header() {
 
         {/* BOTÓN PERFIL + OPCIONES ADMIN */}
         <div className="flex items-center gap-3 flex-1 justify-end pr-6">
+          <ThemeSwitch />
           <button
             onClick={() => setMenuOpen(true)}
             className="flex items-center gap-2 text-slate-700 hover:text-purple-700 transition"
