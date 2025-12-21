@@ -1,55 +1,28 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Moon, Sun } from "lucide-react";
-
-function getSystemTheme() {
-  if (typeof window === "undefined") return "light";
-  return window.matchMedia("(prefers-color-scheme: dark)").matches
-    ? "dark"
-    : "light";
-}
-
-function applyTheme(theme) {
-  const root = document.documentElement;
-  if (theme === "dark") root.classList.add("dark");
-  else root.classList.remove("dark");
-}
+import { useTheme } from "next-themes";
+import { Switch } from "@/components/ui/switch";
+import { Sun, Moon } from "lucide-react";
 
 export default function ThemeSwitch() {
-  const [theme, setTheme] = useState("light");
+  const { theme, setTheme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
 
-  useEffect(() => {
-    const saved = localStorage.getItem("theme");
-    const initial = saved ?? getSystemTheme();
-    setTheme(initial);
-    applyTheme(initial);
-    setMounted(true);
-  }, []);
-
-  useEffect(() => {
-    if (!mounted) return;
-    localStorage.setItem("theme", theme);
-    applyTheme(theme);
-  }, [theme, mounted]);
-
+  useEffect(() => setMounted(true), []);
   if (!mounted) return null;
 
+  const isDark = (theme === "dark") || (theme === "system" && resolvedTheme === "dark");
+
   return (
-    <button
-      onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-      className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-2 text-sm shadow-sm transition hover:bg-accent"
-      aria-label="Cambiar tema"
-    >
-      {theme === "dark" ? (
-        <Moon className="h-4 w-4" />
-      ) : (
-        <Sun className="h-4 w-4" />
-      )}
-      <span className="hidden sm:inline">
-        {theme === "dark" ? "Oscuro" : "Claro"}
-      </span>
-    </button>
+    <div className="flex items-center gap-2">
+      <Sun className={`h-4 w-4 ${isDark ? "text-white/50" : "text-amber-500"}`} />
+      <Switch
+        checked={isDark}
+        onCheckedChange={(checked) => setTheme(checked ? "dark" : "light")}
+        aria-label="Cambiar tema"
+      />
+      <Moon className={`h-4 w-4 ${isDark ? "text-sky-300" : "text-slate-400"}`} />
+    </div>
   );
 }
