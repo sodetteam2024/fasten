@@ -27,11 +27,9 @@ export default function RegistrarUsuarioForm({ onSuccess }) {
     idrol: "",
   });
 
-  // Cargar catálogos y roles
   useEffect(() => {
     (async () => {
       try {
-        // catálogos
         const { data, error } = await supabase.rpc("get_catalogos");
         if (error) {
           console.error("❌ Error cargando catálogos:", error);
@@ -42,7 +40,6 @@ export default function RegistrarUsuarioForm({ onSuccess }) {
           setDirecciones(data?.direcciones ?? []);
         }
 
-        // roles
         const { data: rolesData, error: rolesError } = await supabase
           .from("roles")
           .select("*")
@@ -59,23 +56,15 @@ export default function RegistrarUsuarioForm({ onSuccess }) {
     })();
   }, []);
 
-  // Manejadores
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
+    setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
   const handleTipoVivienda = (e) => {
     const value = e.target.value;
     setTipoVivienda(value);
-    // resetear dirección seleccionada al cambiar tipo
-    setFormData((prev) => ({
-      ...prev,
-      id_direccion: "",
-    }));
+    setFormData((prev) => ({ ...prev, id_direccion: "" }));
   };
 
   const handleSubmit = async (e) => {
@@ -100,7 +89,6 @@ export default function RegistrarUsuarioForm({ onSuccess }) {
           apellido: formData.apellido,
           telefono: formData.telefono,
           id_unidad: formData.id_unidad,
-          // Si tipo de dirección es 3, siempre enviamos id_direccion = 3
           id_direccion: tipoVivienda === "3" ? 3 : formData.id_direccion,
           tipo_documento: formData.id_tipo_documento,
           nro_documento: formData.nro_documento,
@@ -133,7 +121,6 @@ export default function RegistrarUsuarioForm({ onSuccess }) {
       });
       setTipoVivienda("");
 
-      // callback opcional para que el panel haga algo (refrescar tabla, cerrar modal, etc.)
       if (onSuccess) onSuccess(data);
     } catch (error) {
       console.error("❌ Error enviando formulario:", error);
@@ -143,32 +130,45 @@ export default function RegistrarUsuarioForm({ onSuccess }) {
     }
   };
 
-  // Filtrar direcciones según tipo de vivienda seleccionado (para tipo 1 y 2)
   const direccionesFiltradas = direcciones.filter(
     (d) => d.id_tipodireccion?.toString() === tipoVivienda
   );
 
+  const labelBase =
+    "block text-[11px] font-medium text-muted-foreground mb-1";
+  const inputBase =
+    "w-full rounded-lg px-3 py-2 text-sm bg-white/70 dark:bg-white/5 border border-white/10 outline-none " +
+    "focus:ring-2 focus:ring-purple-400/40 placeholder:text-muted-foreground/70";
+  const selectBase =
+    "w-full rounded-lg px-3 py-2 text-sm bg-white/70 dark:bg-white/5 border border-white/10 outline-none " +
+    "focus:ring-2 focus:ring-purple-400/40";
+
   return (
-    <div className="bg-white shadow-lg rounded-2xl w-full p-6 sm:p-8">
-      <h2 className="text-xl sm:text-2xl font-semibold text-gray-800 mb-6">
+    <div
+      className="
+        w-full p-6 sm:p-8
+        rounded-2xl
+        border border-white/10
+        bg-white/80 dark:bg-black/60
+        backdrop-blur-xl
+        text-foreground
+        shadow-[0_20px_60px_rgba(0,0,0,0.35)]
+      "
+    >
+      <h2 className="text-base sm:text-lg font-semibold mb-6">
         Crear nuevo usuario
       </h2>
 
-      <form
-        onSubmit={handleSubmit}
-        className="grid grid-cols-1 sm:grid-cols-2 gap-5"
-      >
+      <form onSubmit={handleSubmit} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {/* Nombre */}
         <div>
-          <label className="block text-sm font-medium text-gray-600 mb-1">
-            Nombre
-          </label>
+          <label className={labelBase}>Nombre</label>
           <input
             type="text"
             name="nombre"
             value={formData.nombre}
             onChange={handleChange}
-            className="w-full border-gray-300 focus:ring-blue-500 focus:border-blue-500 rounded-lg shadow-sm p-2.5"
+            className={inputBase}
             placeholder="Juan"
             required
           />
@@ -176,31 +176,27 @@ export default function RegistrarUsuarioForm({ onSuccess }) {
 
         {/* Apellido */}
         <div>
-          <label className="block text-sm font-medium text-gray-600 mb-1">
-            Apellido
-          </label>
+          <label className={labelBase}>Apellido</label>
           <input
             type="text"
             name="apellido"
             value={formData.apellido}
             onChange={handleChange}
-            className="w-full border-gray-300 focus:ring-blue-500 focus:border-blue-500 rounded-lg shadow-sm p-2.5"
+            className={inputBase}
             placeholder="Pérez"
             required
           />
         </div>
 
         {/* Correo */}
-        <div className="col-span-2">
-          <label className="block text-sm font-medium text-gray-600 mb-1">
-            Correo electrónico
-          </label>
+        <div className="sm:col-span-2">
+          <label className={labelBase}>Correo electrónico</label>
           <input
             type="email"
             name="email"
             value={formData.email}
             onChange={handleChange}
-            className="w-full border-gray-300 focus:ring-blue-500 focus:border-blue-500 rounded-lg shadow-sm p-2.5"
+            className={inputBase}
             placeholder="usuario@empresa.com"
             required
           />
@@ -208,15 +204,13 @@ export default function RegistrarUsuarioForm({ onSuccess }) {
 
         {/* Nombre usuario */}
         <div>
-          <label className="block text-sm font-medium text-gray-600 mb-1">
-            Nombre de usuario
-          </label>
+          <label className={labelBase}>Nombre de usuario</label>
           <input
             type="text"
             name="nombre_usuario"
             value={formData.nombre_usuario}
             onChange={handleChange}
-            className="w-full border-gray-300 focus:ring-blue-500 focus:border-blue-500 rounded-lg shadow-sm p-2.5"
+            className={inputBase}
             placeholder="Ej. juan_perez"
             required
           />
@@ -224,44 +218,38 @@ export default function RegistrarUsuarioForm({ onSuccess }) {
 
         {/* Contraseña */}
         <div>
-          <label className="block text-sm font-medium text-gray-600 mb-1">
-            Contraseña
-          </label>
+          <label className={labelBase}>Contraseña</label>
           <input
             type="password"
             name="password"
             value={formData.password}
             onChange={handleChange}
-            className="w-full border-gray-300 focus:ring-blue-500 focus:border-blue-500 rounded-lg shadow-sm p-2.5"
-            placeholder="Contraseña temporal"
+            className={inputBase}
+            placeholder="Contraseña temporal (opcional)"
           />
         </div>
 
         {/* Teléfono */}
         <div>
-          <label className="block text-sm font-medium text-gray-600 mb-1">
-            Teléfono
-          </label>
+          <label className={labelBase}>Teléfono</label>
           <input
             type="text"
             name="telefono"
             value={formData.telefono}
             onChange={handleChange}
-            className="w-full border-gray-300 focus:ring-blue-500 focus:border-blue-500 rounded-lg shadow-sm p-2.5"
+            className={inputBase}
             placeholder="+57 300 000 0000"
           />
         </div>
 
         {/* Tipo de documento */}
         <div>
-          <label className="block text-sm font-medium text-gray-600 mb-1">
-            Tipo de documento
-          </label>
+          <label className={labelBase}>Tipo de documento</label>
           <select
             name="id_tipo_documento"
             value={formData.id_tipo_documento}
             onChange={handleChange}
-            className="w-full border-gray-300 focus:ring-blue-500 focus:border-blue-500 rounded-lg shadow-sm p-2.5"
+            className={selectBase}
             required
           >
             <option value="">Seleccione un tipo</option>
@@ -275,15 +263,13 @@ export default function RegistrarUsuarioForm({ onSuccess }) {
 
         {/* Número de documento */}
         <div>
-          <label className="block text-sm font-medium text-gray-600 mb-1">
-            Número de documento
-          </label>
+          <label className={labelBase}>Número de documento</label>
           <input
             type="text"
             name="nro_documento"
             value={formData.nro_documento}
             onChange={handleChange}
-            className="w-full border-gray-300 focus:ring-blue-500 focus:border-blue-500 rounded-lg shadow-sm p-2.5"
+            className={inputBase}
             placeholder="Ej. 123456789"
             required
           />
@@ -291,14 +277,12 @@ export default function RegistrarUsuarioForm({ onSuccess }) {
 
         {/* Unidad */}
         <div>
-          <label className="block text-sm font-medium text-gray-600 mb-1">
-            Unidad
-          </label>
+          <label className={labelBase}>Unidad</label>
           <select
             name="id_unidad"
             value={formData.id_unidad}
             onChange={handleChange}
-            className="w-full border-gray-300 focus:ring-blue-500 focus:border-blue-500 rounded-lg shadow-sm p-2.5"
+            className={selectBase}
           >
             <option value="">Seleccione una unidad</option>
             {unidades.map((u) => (
@@ -311,14 +295,12 @@ export default function RegistrarUsuarioForm({ onSuccess }) {
 
         {/* Rol */}
         <div>
-          <label className="block text-sm font-medium text-gray-600 mb-1">
-            Rol
-          </label>
+          <label className={labelBase}>Rol</label>
           <select
             name="idrol"
             value={formData.idrol}
             onChange={handleChange}
-            className="w-full border-gray-300 focus:ring-blue-500 focus:border-blue-500 rounded-lg shadow-sm p-2.5"
+            className={selectBase}
             required
           >
             <option value="">Seleccione un rol</option>
@@ -331,19 +313,11 @@ export default function RegistrarUsuarioForm({ onSuccess }) {
         </div>
 
         {/* Dirección */}
-        <div className="col-span-2 border-t pt-5">
-          <h2 className="text-lg font-semibold text-gray-700 mb-3">
-            Dirección
-          </h2>
+        <div className="sm:col-span-2 border-t border-white/10 pt-5 mt-1">
+          <h3 className="text-sm font-semibold mb-3">Dirección</h3>
 
-          <label className="block text-sm font-medium text-gray-600 mb-1">
-            Tipo de vivienda
-          </label>
-          <select
-            value={tipoVivienda}
-            onChange={handleTipoVivienda}
-            className="w-full border-gray-300 focus:ring-blue-500 focus:border-blue-500 rounded-lg shadow-sm p-2.5 mb-4"
-          >
+          <label className={labelBase}>Tipo de vivienda</label>
+          <select value={tipoVivienda} onChange={handleTipoVivienda} className={selectBase}>
             <option value="">Seleccione tipo de dirección</option>
             {tiposVivienda.map((tv) => (
               <option key={tv.id_tipodireccion} value={tv.id_tipodireccion}>
@@ -352,17 +326,14 @@ export default function RegistrarUsuarioForm({ onSuccess }) {
             ))}
           </select>
 
-          {/* Solo mostrar select de dirección si tipoVivienda NO es 3 */}
           {tipoVivienda && tipoVivienda !== "3" && (
-            <>
-              <label className="block text-sm font-medium text-gray-600 mb-1">
-                Dirección
-              </label>
+            <div className="mt-4">
+              <label className={labelBase}>Dirección</label>
               <select
                 name="id_direccion"
                 value={formData.id_direccion}
                 onChange={handleChange}
-                className="w-full border-gray-300 focus:ring-blue-500 focus:border-blue-500 rounded-lg shadow-sm p-2.5"
+                className={selectBase}
                 required
               >
                 <option value="">Seleccione una dirección</option>
@@ -372,15 +343,27 @@ export default function RegistrarUsuarioForm({ onSuccess }) {
                   </option>
                 ))}
               </select>
-            </>
+            </div>
+          )}
+
+          {tipoVivienda === "3" && (
+            <p className="mt-3 text-xs text-muted-foreground">
+              Para este tipo de vivienda, la dirección se asigna automáticamente.
+            </p>
           )}
         </div>
 
-        <div className="col-span-2 mt-6 flex justify-end">
+        <div className="sm:col-span-2 mt-6 flex justify-end">
           <button
             type="submit"
             disabled={loading}
-            className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-6 rounded-lg transition disabled:opacity-50"
+            className="
+              rounded-lg px-5 py-2 text-sm font-semibold
+              bg-purple-600 hover:bg-purple-700
+              text-white
+              transition
+              disabled:opacity-50 disabled:cursor-not-allowed
+            "
           >
             {loading ? "Creando..." : "Crear usuario"}
           </button>
@@ -389,4 +372,3 @@ export default function RegistrarUsuarioForm({ onSuccess }) {
     </div>
   );
 }
-

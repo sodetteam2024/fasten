@@ -58,10 +58,7 @@ export default function UsuariosActivos() {
         if (rolError || !rolRow) return;
 
         const nombreRol = (rolRow.nombre_rol || "").toLowerCase();
-        // Ajusta este contains según el nombre real del rol
-        if (nombreRol.includes("super")) {
-          setIsSuperAdmin(true);
-        }
+        if (nombreRol.includes("super")) setIsSuperAdmin(true);
       } catch (err) {
         console.error("Error comprobando rol de superadmin:", err);
       }
@@ -70,7 +67,7 @@ export default function UsuariosActivos() {
     checkRole();
   }, [isLoaded, user]);
 
-  // 2) Carga de datos principales (sin relaciones anidadas)
+  // 2) Carga de datos principales
   useEffect(() => {
     const fetchAll = async () => {
       setLoading(true);
@@ -92,93 +89,55 @@ export default function UsuariosActivos() {
             )
             .order("id_perfil", { ascending: true }),
 
-          supabase
-            .from("usuarios")
-            .select("id_usuario, nombre_usuario, email, idrol"),
+          supabase.from("usuarios").select("id_usuario, nombre_usuario, email, idrol"),
 
-          supabase
-            .from("roles")
-            .select("idrol, nombre_rol")
-            .order("nombre_rol"),
+          supabase.from("roles").select("idrol, nombre_rol").order("nombre_rol"),
 
-          supabase
-            .from("unidades")
-            .select("id_unidad, nombre_unidad")
-            .order("nombre_unidad"),
+          supabase.from("unidades").select("id_unidad, nombre_unidad").order("nombre_unidad"),
 
-          supabase
-            .from("direcciones")
-            .select("id_direccion, id_tipodireccion, grupo, complemento"),
+          supabase.from("direcciones").select("id_direccion, id_tipodireccion, grupo, complemento"),
 
-          supabase
-            .from("tipodirecciones")
-            .select("id_tipodireccion, descripcion, nombre_grupo"),
+          supabase.from("tipodirecciones").select("id_tipodireccion, descripcion, nombre_grupo"),
 
-          supabase
-            .from("tiposdocumentos")
-            .select("id_tipodocumento, nombre")
-            .order("id_tipodocumento"),
+          supabase.from("tiposdocumentos").select("id_tipodocumento, nombre").order("id_tipodocumento"),
         ]);
 
         if (rolesRes.data) setRoles(rolesRes.data);
         if (unidadesRes.data) setUnidades(unidadesRes.data);
         if (tiposDocRes.data) setTiposDocumento(tiposDocRes.data);
 
-        // Construir mapa de tipo-dirección
         const tipodirMap = new Map(
-          (tipoDireccionesRes.data || []).map((td) => [
-            td.id_tipodireccion,
-            td,
-          ])
+          (tipoDireccionesRes.data || []).map((td) => [td.id_tipodireccion, td])
         );
 
-        // Direcciones con label formateado
         if (direccionesRes.data) {
           const dirOpts = direccionesRes.data.map((d) => {
             const td = tipodirMap.get(d.id_tipodireccion);
             const label = td
               ? `${td.descripcion} ${d.grupo} ${td.nombre_grupo} ${d.complemento}`
               : `${d.grupo} ${d.complemento}`;
-            return {
-              id_direccion: d.id_direccion,
-              id_tipodireccion: d.id_tipodireccion,
-              label,
-            };
+            return { id_direccion: d.id_direccion, id_tipodireccion: d.id_tipodireccion, label };
           });
           setDirecciones(dirOpts);
         }
 
-        // Mapas para unir datos
-        const usuariosMap = new Map(
-          (usuariosRes.data || []).map((u) => [u.id_usuario, u])
-        );
-        const rolesMap = new Map(
-          (rolesRes.data || []).map((r) => [r.idrol, r])
-        );
-        const unidadesMap = new Map(
-          (unidadesRes.data || []).map((u) => [u.id_unidad, u])
-        );
-        const tiposDocMap = new Map(
-          (tiposDocRes.data || []).map((t) => [t.id_tipodocumento, t])
-        );
-        const direccionesMap = new Map(
-          (direccionesRes.data || []).map((d) => [d.id_direccion, d])
-        );
+        const usuariosMap = new Map((usuariosRes.data || []).map((u) => [u.id_usuario, u]));
+        const rolesMap = new Map((rolesRes.data || []).map((r) => [r.idrol, r]));
+        const unidadesMap = new Map((unidadesRes.data || []).map((u) => [u.id_unidad, u]));
+        const tiposDocMap = new Map((tiposDocRes.data || []).map((t) => [t.id_tipodocumento, t]));
+        const direccionesMap = new Map((direccionesRes.data || []).map((d) => [d.id_direccion, d]));
 
-        // Construir lista final de usuarios
         if (perfilesRes.data) {
           const list = perfilesRes.data.map((p) => {
-            const usuario = usuariosMap.get(p.id_usuario);
-            const rol = usuario ? rolesMap.get(usuario.idrol) : null;
+            const usuarioRow = usuariosMap.get(p.id_usuario);
+            const rol = usuarioRow ? rolesMap.get(usuarioRow.idrol) : null;
             const unidad = unidadesMap.get(p.id_unidad);
             const tipoDoc = tiposDocMap.get(p.tipo_documento);
             const dir = direccionesMap.get(p.id_direccion);
             const tipod = dir ? tipodirMap.get(dir.id_tipodireccion) : null;
 
             const direccionLabel =
-              dir && tipod
-                ? `${tipod.descripcion} ${dir.grupo} ${tipod.nombre_grupo} ${dir.complemento}`
-                : "";
+              dir && tipod ? `${tipod.descripcion} ${dir.grupo} ${tipod.nombre_grupo} ${dir.complemento}` : "";
 
             return {
               id_perfil: p.id_perfil,
@@ -186,9 +145,9 @@ export default function UsuariosActivos() {
               nombre: p.nombre ?? "",
               apellido: p.apellido ?? "",
               telefono: p.telefono ?? "",
-              correo: p.correo ?? usuario?.email ?? "",
-              usuario: usuario?.nombre_usuario ?? "",
-              idrol: usuario?.idrol ?? null,
+              correo: p.correo ?? usuarioRow?.email ?? "",
+              usuario: usuarioRow?.nombre_usuario ?? "",
+              idrol: usuarioRow?.idrol ?? null,
               rol: rol?.nombre_rol ?? "",
               id_unidad: p.id_unidad ?? null,
               unidad: unidad?.nombre_unidad ?? "",
@@ -213,7 +172,6 @@ export default function UsuariosActivos() {
   }, []);
 
   // ====== MODAL EDICIÓN ======
-
   const openModal = (u) => {
     setEditingUser(u);
     setFormData({
@@ -238,20 +196,15 @@ export default function UsuariosActivos() {
 
   const handleFormChange = (e) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
+    setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  // UPDATE en BD
   const handleSave = async (e) => {
     e.preventDefault();
     if (!editingUser) return;
 
     setSaving(true);
     try {
-      // actualiza perfilesusuarios
       const { error: perfilError } = await supabase
         .from("perfilesusuarios")
         .update({
@@ -272,7 +225,6 @@ export default function UsuariosActivos() {
         return;
       }
 
-      // actualiza usuarios
       if (editingUser.id_usuario) {
         const { error: usuarioError } = await supabase
           .from("usuarios")
@@ -290,24 +242,14 @@ export default function UsuariosActivos() {
         }
       }
 
-      // actualizar estado local
       setUsuarios((prev) =>
         prev.map((u) => {
           if (u.id_perfil !== editingUser.id_perfil) return u;
 
-          const rolObj = roles.find(
-            (r) => r.idrol === Number(formData.idrol)
-          );
-          const unidadObj = unidades.find(
-            (un) => un.id_unidad === Number(formData.id_unidad)
-          );
-          const tipoDocObj = tiposDocumento.find(
-            (t) =>
-              t.id_tipodocumento === Number(formData.id_tipo_documento)
-          );
-          const dirObj = direcciones.find(
-            (d) => d.id_direccion === Number(formData.id_direccion)
-          );
+          const rolObj = roles.find((r) => r.idrol === Number(formData.idrol));
+          const unidadObj = unidades.find((un) => un.id_unidad === Number(formData.id_unidad));
+          const tipoDocObj = tiposDocumento.find((t) => t.id_tipodocumento === Number(formData.id_tipo_documento));
+          const dirObj = direcciones.find((d) => d.id_direccion === Number(formData.id_direccion));
 
           return {
             ...u,
@@ -335,17 +277,9 @@ export default function UsuariosActivos() {
     }
   };
 
-  // DELETE usuario (solo superadmin)
   const handleDelete = async (u) => {
-    if (
-      !window.confirm(
-        "¿Seguro que deseas eliminar este usuario? Esta acción no se puede deshacer."
-      )
-    ) {
-      return;
-    }
+    if (!window.confirm("¿Seguro que deseas eliminar este usuario? Esta acción no se puede deshacer.")) return;
 
-    // borra perfil
     const { error: perfilError } = await supabase
       .from("perfilesusuarios")
       .delete()
@@ -357,37 +291,18 @@ export default function UsuariosActivos() {
       return;
     }
 
-    // borra usuario (si existe)
     if (u.id_usuario) {
-      const { error: usuarioError } = await supabase
-        .from("usuarios")
-        .delete()
-        .eq("id_usuario", u.id_usuario);
-
-      if (usuarioError) {
-        console.error("⚠ Error eliminando usuario base:", usuarioError);
-      }
+      const { error: usuarioError } = await supabase.from("usuarios").delete().eq("id_usuario", u.id_usuario);
+      if (usuarioError) console.error("⚠ Error eliminando usuario base:", usuarioError);
     }
 
     setUsuarios((prev) => prev.filter((x) => x.id_perfil !== u.id_perfil));
   };
 
-  // Export CSV
   const exportCsv = () => {
     if (!usuarios.length) return;
 
-    const headers = [
-      "Nombre",
-      "Apellido",
-      "Usuario",
-      "Correo",
-      "Rol",
-      "Unidad",
-      "Direccion",
-      "Telefono",
-      "Documento",
-    ];
-
+    const headers = ["Nombre", "Apellido", "Usuario", "Correo", "Rol", "Unidad", "Direccion", "Telefono", "Documento"];
     const rows = usuarios.map((u) => [
       u.nombre,
       u.apellido,
@@ -406,9 +321,7 @@ export default function UsuariosActivos() {
       rows
         .map((row) =>
           row
-            .map((value) =>
-              `"${(value ?? "").toString().replace(/"/g, '""')}"`
-            )
+            .map((value) => `"${(value ?? "").toString().replace(/"/g, '""')}"`)
             .join(",")
         )
         .join("\n");
@@ -423,13 +336,30 @@ export default function UsuariosActivos() {
   };
 
   return (
-    <div className="rounded-xl bg-white shadow-sm border border-gray-300 p-6">
+    <div
+      className="
+        rounded-2xl
+        border border-white/10
+        bg-white/80 dark:bg-black/60
+        backdrop-blur-xl
+        text-foreground
+        shadow-[0_20px_60px_rgba(0,0,0,0.35)]
+        p-6
+      "
+    >
       {/* Header sección */}
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-lg font-semibold">Usuarios activos</h2>
+      <div className="flex justify-between items-center mb-4 gap-3">
+        <h2 className="text-base font-semibold text-foreground">Usuarios activos</h2>
 
         <button
-          className="flex items-center gap-2 px-3 py-2 text-xs border rounded-lg hover:bg-gray-100"
+          className="
+            flex items-center gap-2 px-3 py-2 text-xs rounded-lg
+            border border-white/10
+            bg-white/60 dark:bg-white/5
+            hover:bg-white/80 dark:hover:bg-white/10
+            text-foreground
+            transition
+          "
           onClick={exportCsv}
         >
           <Download className="h-4 w-4" />
@@ -437,127 +367,150 @@ export default function UsuariosActivos() {
         </button>
       </div>
 
-      {/* Tabla */}
-      <div className="rounded-lg border border-gray-300 overflow-hidden">
-        <div className="overflow-x-auto overflow-y-auto max-h-[450px]">
-          <table className="min-w-full text-sm">
-            <thead className="bg-gray-100 text-gray-700 sticky top-0 z-10">
-              <tr>
-                <th className="px-4 py-2 text-left">Nombre</th>
-                <th className="px-4 py-2 text-left">Usuario</th>
-                <th className="px-4 py-2 text-left">Correo</th>
-                <th className="px-4 py-2 text-left">Rol</th>
-                <th className="px-4 py-2 text-left">Unidad</th>
-                <th className="px-4 py-2 text-left">Dirección</th>
-                <th className="px-4 py-2 text-left">Teléfono</th>
-                <th className="px-4 py-2 text-left">Documento</th>
-                <th className="px-4 py-2 text-left w-px"></th>
-              </tr>
-            </thead>
-
-            <tbody className="divide-y divide-gray-200">
-              {loading && (
-                <tr>
-                  <td colSpan={9} className="px-4 py-6 text-center">
-                    Cargando usuarios...
-                  </td>
+      {/* Tabla: UN SOLO SCROLL (horizontal) + alto fijo */}
+      <div className="rounded-xl border border-white/10 overflow-hidden">
+        {/* SOLO este wrapper maneja el overflow */}
+        <div className="overflow-x-auto">
+          <div className="max-h-[520px] overflow-y-auto">
+            <table className="w-full min-w-[1100px] text-sm">
+              <thead className="sticky top-0 z-10 bg-white/90 dark:bg-black/70 backdrop-blur-xl">
+                <tr className="text-xs text-muted-foreground">
+                  <th className="px-4 py-3 text-left font-semibold">Nombre</th>
+                  <th className="px-4 py-3 text-left font-semibold">Usuario</th>
+                  <th className="px-4 py-3 text-left font-semibold">Correo</th>
+                  <th className="px-4 py-3 text-left font-semibold">Rol</th>
+                  <th className="px-4 py-3 text-left font-semibold">Unidad</th>
+                  <th className="px-4 py-3 text-left font-semibold">Dirección</th>
+                  <th className="px-4 py-3 text-left font-semibold">Teléfono</th>
+                  <th className="px-4 py-3 text-left font-semibold">Documento</th>
+                  <th className="px-4 py-3 text-left w-px"></th>
                 </tr>
-              )}
+              </thead>
 
-              {!loading &&
-                usuarios.map((u) => (
-                  <tr key={u.id_perfil}>
-                    <td className="px-4 py-2">
-                      {u.nombre} {u.apellido}
-                    </td>
-                    <td className="px-4 py-2">{u.usuario}</td>
-                    <td className="px-4 py-2">{u.correo}</td>
-                    <td className="px-4 py-2">{u.rol}</td>
-                    <td className="px-4 py-2">{u.unidad}</td>
-                    <td className="px-4 py-2">{u.direccion}</td>
-                    <td className="px-4 py-2">{u.telefono}</td>
-                    <td className="px-4 py-2">
-                      {u.tipo_documento_nombre
-                        ? `${u.tipo_documento_nombre}: ${u.nro_documento}`
-                        : u.nro_documento}
-                    </td>
-                    <td className="px-4 py-2">
-                      {isSuperAdmin && (
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => openModal(u)}
-                            className="flex items-center gap-1 text-xs px-2 py-1 border rounded-lg hover:bg-gray-100"
-                          >
-                            <Pencil className="h-3 w-3" />
-                            Editar
-                          </button>
-
-                          <button
-                            type="button"
-                            className="flex items-center gap-1 text-xs px-2 py-1 border border-red-300 text-red-600 rounded-lg hover:bg-red-100"
-                          >
-                            <Ban className="h-3 w-3" />
-                            Banear
-                          </button>
-
-                          <button
-                            onClick={() => handleDelete(u)}
-                            className="flex items-center gap-1 text-xs px-2 py-1 border border-red-400 text-red-700 rounded-lg hover:bg-red-100"
-                          >
-                            <Trash2 className="h-3 w-3" />
-                            Eliminar
-                          </button>
-                        </div>
-                      )}
+              <tbody className="divide-y divide-white/10">
+                {loading && (
+                  <tr>
+                    <td colSpan={9} className="px-4 py-8 text-center text-muted-foreground">
+                      Cargando usuarios...
                     </td>
                   </tr>
-                ))}
+                )}
 
-              {!loading && usuarios.length === 0 && (
-                <tr>
-                  <td
-                    colSpan={9}
-                    className="px-4 py-6 text-center text-gray-500"
-                  >
-                    No hay usuarios registrados.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+                {!loading &&
+                  usuarios.map((u) => (
+                    <tr key={u.id_perfil} className="hover:bg-white/40 dark:hover:bg-white/5 transition">
+                      <td className="px-4 py-3 text-foreground">
+                        {u.nombre} {u.apellido}
+                      </td>
+                      <td className="px-4 py-3 text-foreground">{u.usuario}</td>
+                      <td className="px-4 py-3 text-foreground">{u.correo}</td>
+                      <td className="px-4 py-3 text-foreground">{u.rol}</td>
+                      <td className="px-4 py-3 text-foreground">{u.unidad}</td>
+                      <td className="px-4 py-3 text-foreground">{u.direccion}</td>
+                      <td className="px-4 py-3 text-foreground">{u.telefono}</td>
+                      <td className="px-4 py-3 text-foreground">
+                        {u.tipo_documento_nombre
+                          ? `${u.tipo_documento_nombre}: ${u.nro_documento}`
+                          : u.nro_documento}
+                      </td>
+
+                      <td className="px-4 py-3">
+                        {isSuperAdmin && (
+                          <div className="flex gap-2 justify-end">
+                            <button
+                              onClick={() => openModal(u)}
+                              className="
+                                flex items-center gap-1 text-[11px] px-2 py-1 rounded-lg
+                                border border-white/10
+                                bg-white/60 dark:bg-white/5
+                                hover:bg-white/80 dark:hover:bg-white/10
+                                transition
+                              "
+                            >
+                              <Pencil className="h-3 w-3" />
+                              Editar
+                            </button>
+
+                            <button
+                              type="button"
+                              className="
+                                flex items-center gap-1 text-[11px] px-2 py-1 rounded-lg
+                                border border-red-500/40 text-red-400
+                                hover:bg-red-500/10
+                                transition
+                              "
+                            >
+                              <Ban className="h-3 w-3" />
+                              Banear
+                            </button>
+
+                            <button
+                              onClick={() => handleDelete(u)}
+                              className="
+                                flex items-center gap-1 text-[11px] px-2 py-1 rounded-lg
+                                border border-red-500/50 text-red-300
+                                hover:bg-red-500/15
+                                transition
+                              "
+                            >
+                              <Trash2 className="h-3 w-3" />
+                              Eliminar
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+
+                {!loading && usuarios.length === 0 && (
+                  <tr>
+                    <td colSpan={9} className="px-4 py-8 text-center text-muted-foreground">
+                      No hay usuarios registrados.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
 
       {/* MODAL EDICIÓN */}
       {modalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center">
-          <div className="bg-white rounded-xl p-6 w-full max-w-lg shadow-xl">
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div
+            className="
+              w-full max-w-lg rounded-2xl
+              border border-white/10
+              bg-white/90 dark:bg-black/80
+              backdrop-blur-xl
+              shadow-[0_20px_60px_rgba(0,0,0,0.45)]
+              p-6
+              text-foreground
+            "
+          >
             <div className="flex justify-between mb-4">
-              <h3 className="text-lg font-semibold">Editar usuario</h3>
-              <button
-                onClick={closeModal}
-                className="text-gray-500 hover:text-gray-800"
-              >
+              <h3 className="text-base font-semibold">Editar usuario</h3>
+              <button onClick={closeModal} className="text-muted-foreground hover:text-foreground">
                 ✕
               </button>
             </div>
 
             <form className="space-y-4" onSubmit={handleSave}>
-              {/* Nombre y Apellido */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="text-xs text-gray-600">Nombre</label>
+                  <label className="text-[11px] text-muted-foreground">Nombre</label>
                   <input
-                    className="w-full border rounded-lg px-2 py-1 text-sm"
+                    className="w-full rounded-lg px-3 py-2 text-sm bg-white/70 dark:bg-white/5 border border-white/10 outline-none focus:ring-2 focus:ring-purple-400/40"
                     name="nombre"
                     value={formData.nombre}
                     onChange={handleFormChange}
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-gray-600">Apellido</label>
+                  <label className="text-[11px] text-muted-foreground">Apellido</label>
                   <input
-                    className="w-full border rounded-lg px-2 py-1 text-sm"
+                    className="w-full rounded-lg px-3 py-2 text-sm bg-white/70 dark:bg-white/5 border border-white/10 outline-none focus:ring-2 focus:ring-purple-400/40"
                     name="apellido"
                     value={formData.apellido}
                     onChange={handleFormChange}
@@ -565,12 +518,11 @@ export default function UsuariosActivos() {
                 </div>
               </div>
 
-              {/* Correo y Teléfono */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="text-xs text-gray-600">Correo</label>
+                  <label className="text-[11px] text-muted-foreground">Correo</label>
                   <input
-                    className="w-full border rounded-lg px-2 py-1 text-sm"
+                    className="w-full rounded-lg px-3 py-2 text-sm bg-white/70 dark:bg-white/5 border border-white/10 outline-none focus:ring-2 focus:ring-purple-400/40"
                     name="correo"
                     type="email"
                     value={formData.correo}
@@ -578,9 +530,9 @@ export default function UsuariosActivos() {
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-gray-600">Teléfono</label>
+                  <label className="text-[11px] text-muted-foreground">Teléfono</label>
                   <input
-                    className="w-full border rounded-lg px-2 py-1 text-sm"
+                    className="w-full rounded-lg px-3 py-2 text-sm bg-white/70 dark:bg-white/5 border border-white/10 outline-none focus:ring-2 focus:ring-purple-400/40"
                     name="telefono"
                     value={formData.telefono}
                     onChange={handleFormChange}
@@ -588,24 +540,23 @@ export default function UsuariosActivos() {
                 </div>
               </div>
 
-              {/* Usuario y Unidad */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="text-xs text-gray-600">Usuario</label>
+                  <label className="text-[11px] text-muted-foreground">Usuario</label>
                   <input
-                    className="w-full border rounded-lg px-2 py-1 text-sm"
+                    className="w-full rounded-lg px-3 py-2 text-sm bg-white/70 dark:bg-white/5 border border-white/10 outline-none focus:ring-2 focus:ring-purple-400/40"
                     name="usuario"
                     value={formData.usuario}
                     onChange={handleFormChange}
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-gray-600">Unidad</label>
+                  <label className="text-[11px] text-muted-foreground">Unidad</label>
                   <select
                     name="id_unidad"
                     value={formData.id_unidad || ""}
                     onChange={handleFormChange}
-                    className="w-full border rounded-lg px-2 py-1 text-sm bg-white"
+                    className="w-full rounded-lg px-3 py-2 text-sm bg-white/70 dark:bg-white/5 border border-white/10 outline-none focus:ring-2 focus:ring-purple-400/40"
                   >
                     <option value="">Seleccione unidad</option>
                     {unidades.map((u) => (
@@ -617,15 +568,14 @@ export default function UsuariosActivos() {
                 </div>
               </div>
 
-              {/* Rol y Dirección */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="text-xs text-gray-600">Rol</label>
+                  <label className="text-[11px] text-muted-foreground">Rol</label>
                   <select
                     name="idrol"
                     value={formData.idrol || ""}
                     onChange={handleFormChange}
-                    className="w-full border rounded-lg px-2 py-1 text-sm bg-white"
+                    className="w-full rounded-lg px-3 py-2 text-sm bg-white/70 dark:bg-white/5 border border-white/10 outline-none focus:ring-2 focus:ring-purple-400/40"
                   >
                     <option value="">Seleccione rol</option>
                     {roles.map((r) => (
@@ -635,13 +585,14 @@ export default function UsuariosActivos() {
                     ))}
                   </select>
                 </div>
+
                 <div>
-                  <label className="text-xs text-gray-600">Dirección</label>
+                  <label className="text-[11px] text-muted-foreground">Dirección</label>
                   <select
                     name="id_direccion"
                     value={formData.id_direccion || ""}
                     onChange={handleFormChange}
-                    className="w-full border rounded-lg px-2 py-1 text-sm bg-white"
+                    className="w-full rounded-lg px-3 py-2 text-sm bg-white/70 dark:bg-white/5 border border-white/10 outline-none focus:ring-2 focus:ring-purple-400/40"
                   >
                     <option value="">Seleccione dirección</option>
                     {direcciones.map((d) => (
@@ -653,35 +604,28 @@ export default function UsuariosActivos() {
                 </div>
               </div>
 
-              {/* Tipo doc y número */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="text-xs text-gray-600">
-                    Tipo de documento
-                  </label>
+                  <label className="text-[11px] text-muted-foreground">Tipo de documento</label>
                   <select
                     name="id_tipo_documento"
                     value={formData.id_tipo_documento || ""}
                     onChange={handleFormChange}
-                    className="w-full border rounded-lg px-2 py-1 text-sm bg.white"
+                    className="w-full rounded-lg px-3 py-2 text-sm bg-white/70 dark:bg-white/5 border border-white/10 outline-none focus:ring-2 focus:ring-purple-400/40"
                   >
                     <option value="">Seleccione tipo</option>
                     {tiposDocumento.map((t) => (
-                      <option
-                        key={t.id_tipodocumento}
-                        value={t.id_tipodocumento}
-                      >
+                      <option key={t.id_tipodocumento} value={t.id_tipodocumento}>
                         {t.nombre}
                       </option>
                     ))}
                   </select>
                 </div>
+
                 <div>
-                  <label className="text-xs text-gray-600">
-                    Número de documento
-                  </label>
+                  <label className="text-[11px] text-muted-foreground">Número de documento</label>
                   <input
-                    className="w-full border rounded-lg px-2 py-1 text-sm"
+                    className="w-full rounded-lg px-3 py-2 text-sm bg-white/70 dark:bg-white/5 border border-white/10 outline-none focus:ring-2 focus:ring-purple-400/40"
                     name="nro_documento"
                     value={formData.nro_documento}
                     onChange={handleFormChange}
@@ -689,12 +633,11 @@ export default function UsuariosActivos() {
                 </div>
               </div>
 
-              {/* Botones */}
               <div className="flex justify-end gap-2 mt-4">
                 <button
                   type="button"
                   onClick={closeModal}
-                  className="px-4 py-2 border rounded-lg text-sm"
+                  className="px-4 py-2 rounded-lg text-sm border border-white/10 bg-white/60 dark:bg-white/5 hover:bg-white/80 dark:hover:bg-white/10 transition"
                 >
                   Cancelar
                 </button>
