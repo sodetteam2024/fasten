@@ -80,11 +80,22 @@ export default function Inicio() {
         >
           {/* Logo */}
           <div className="flex flex-col items-center mb-8">
+            {/* Logo Light */}
             <img
               src="/fasten-logo.png"
               alt="FASTEN"
-              className="h-20 sm:h-24 w-auto mb-4 drop-shadow-sm"
+              className="h-20 sm:h-24 w-auto mb-4 drop-shadow-sm dark:hidden"
+              draggable={false}
             />
+
+            {/* Logo Dark */}
+            <img
+              src="/fasten-logo-dark.png"
+              alt="FASTEN"
+              className="h-20 sm:h-24 w-auto mb-4 drop-shadow-sm hidden dark:block"
+              draggable={false}
+            />
+
             <p className="text-sm text-slate-700 dark:text-zinc-200 text-center">
               ¡Bienvenido al portal de gestión de tu hogar!
             </p>
@@ -162,7 +173,9 @@ export default function Inicio() {
 
                 <button
                   type="button"
-                  aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+                  aria-label={
+                    showPassword ? "Ocultar contraseña" : "Mostrar contraseña"
+                  }
                   onClick={() => setShowPassword((prev) => !prev)}
                   className="
                     absolute inset-y-0 right-0
@@ -173,7 +186,11 @@ export default function Inicio() {
                     transition
                   "
                 >
-                  {showPassword ? <EyeClosed className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                  {showPassword ? (
+                    <EyeClosed className="h-5 w-5" />
+                  ) : (
+                    <Eye className="h-5 w-5" />
+                  )}
                 </button>
               </div>
             </div>
