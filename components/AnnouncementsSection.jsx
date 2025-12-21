@@ -12,14 +12,14 @@ export default function AnnouncementsSection() {
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [files, setFiles] = useState([]); // adjuntos seleccionados en el form
+  const [files, setFiles] = useState([]);
   const [isActive, setIsActive] = useState(true);
 
-  const [announcements, setAnnouncements] = useState([]); // anuncios cargados
+  const [announcements, setAnnouncements] = useState([]);
 
   const [perfil, setPerfil] = useState(null);
-  const [roleId, setRoleId] = useState(null);      // rol del usuario logueado
-  const [roleName, setRoleName] = useState("");    // nombre_rol del usuario logueado
+  const [roleId, setRoleId] = useState(null);
+  const [roleName, setRoleName] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -28,16 +28,13 @@ export default function AnnouncementsSection() {
   const currentUserName =
     user?.fullName || user?.username || "Usuario desconocido";
 
-  // 1 = SuperAdmin, 2 = Admin
   const canManageAnnouncements = roleId === 1 || roleId === 2;
 
-  // 1️⃣ Cargar usuario, perfil, rol DEL PUBLICADOR y novedades + adjuntos
   useEffect(() => {
     if (!user) return;
 
     const loadData = async () => {
       try {
-        // usuarios: obtener id_usuario + idrol del usuario actual
         const { data: usuario, error: errUsuario } = await supabase
           .from("usuarios")
           .select("id_usuario, idrol")
@@ -52,7 +49,6 @@ export default function AnnouncementsSection() {
 
         setRoleId(usuario.idrol);
 
-        // rol del usuario actual (solo para cuando él publica)
         if (usuario.idrol) {
           const { data: rolData, error: errRol } = await supabase
             .from("roles")
@@ -60,12 +56,9 @@ export default function AnnouncementsSection() {
             .eq("idrol", usuario.idrol)
             .single();
 
-          if (!errRol && rolData) {
-            setRoleName(rolData.nombre_rol);
-          }
+          if (!errRol && rolData) setRoleName(rolData.nombre_rol);
         }
 
-        // perfilesusuarios del usuario actual
         const { data: perfilData, error: errPerfil } = await supabase
           .from("perfilesusuarios")
           .select("id_perfil, id_unidad, nombre, apellido")
@@ -73,17 +66,13 @@ export default function AnnouncementsSection() {
           .single();
 
         if (errPerfil || !perfilData) {
-          console.error(
-            "No se encontró perfil en 'perfilesusuarios':",
-            errPerfil
-          );
+          console.error("No se encontró perfil en 'perfilesusuarios':", errPerfil);
           setLoading(false);
           return;
         }
 
         setPerfil(perfilData);
 
-        // novedades + perfil (con id_usuario) + adjuntos
         let novedadesQuery = supabase
           .from("novedades")
           .select(
@@ -109,7 +98,6 @@ export default function AnnouncementsSection() {
           .eq("id_unidad", perfilData.id_unidad)
           .order("fecha", { ascending: false });
 
-        // si NO es admin/superadmin → solo activas
         if (usuario.idrol !== 1 && usuario.idrol !== 2) {
           novedadesQuery = novedadesQuery.eq("estado", true);
         }
@@ -122,7 +110,6 @@ export default function AnnouncementsSection() {
           return;
         }
 
-        // 🔹 Obtener todos los id_usuario que publicaron novedades
         const userIds = Array.from(
           new Set(
             (novedades || [])
@@ -131,7 +118,6 @@ export default function AnnouncementsSection() {
           )
         );
 
-        // 🔹 Mapa id_usuario -> nombre_rol
         let roleByUserId = {};
         if (userIds.length > 0) {
           const { data: usuariosPub, error: errUsuariosPub } = await supabase
@@ -143,17 +129,16 @@ export default function AnnouncementsSection() {
             console.error("Error cargando roles de publicadores:", errUsuariosPub);
           } else if (usuariosPub) {
             usuariosPub.forEach((u) => {
-              const nombreRol = u.roles?.nombre_rol || "Usuario";
-              roleByUserId[u.id_usuario] = nombreRol;
+              roleByUserId[u.id_usuario] = u.roles?.nombre_rol || "Usuario";
             });
           }
         }
 
-        // 🔹 Mapear novedades al formato del front
         const mapped =
           (novedades || []).map((n) => {
             const perfilN = n.perfilesusuarios;
             const idUsuarioPub = perfilN?.id_usuario;
+
             const publisherRole =
               (idUsuarioPub && roleByUserId[idUsuarioPub]) || "Usuario";
 
@@ -164,11 +149,10 @@ export default function AnnouncementsSection() {
               createdAt: n.fecha,
               estado: n.estado,
               userName: perfilN
-                ? `${perfilN.nombre ?? ""} ${
-                    perfilN.apellido ?? ""
-                  }`.trim() || "Usuario"
+                ? `${perfilN.nombre ?? ""} ${perfilN.apellido ?? ""}`.trim() ||
+                  "Usuario"
                 : "Usuario",
-              publisherRole, // 👈 rol fijo del publicador
+              publisherRole,
               attachments: (n.novedades_adjuntos || []).map((adj) => ({
                 id: adj.id_adjunto,
                 name: adj.attachment_name,
@@ -189,13 +173,11 @@ export default function AnnouncementsSection() {
     loadData();
   }, [user]);
 
-  // 2️⃣ Adjuntos (máx 4, acumulando entre selecciones)
   const handleAttachmentChange = (e) => {
     const selected = Array.from(e.target.files || []);
     if (selected.length === 0) return;
 
     let combined = [...files, ...selected];
-
     if (combined.length > 4) {
       alert("Solo puedes adjuntar máximo 4 archivos.");
       combined = combined.slice(0, 4);
@@ -205,12 +187,10 @@ export default function AnnouncementsSection() {
     e.target.value = "";
   };
 
-  // quitar un archivo individual con la X
   const handleRemoveFile = (index) => {
     setFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
-  // 3️⃣ Guardar anuncio + adjuntos en Supabase
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -227,7 +207,6 @@ export default function AnnouncementsSection() {
     setSaving(true);
 
     try {
-      // Insertar novedad
       const { data: inserted, error: errNovedad } = await supabase
         .from("novedades")
         .insert([
@@ -250,7 +229,6 @@ export default function AnnouncementsSection() {
 
       const idNovedad = inserted.id_novedad;
 
-      // Subir archivos al bucket "novedades"
       const adjuntosParaInsertar = [];
 
       for (let i = 0; i < files.length; i++) {
@@ -304,7 +282,7 @@ export default function AnnouncementsSection() {
         createdAt: inserted.fecha,
         estado: inserted.estado,
         userName: currentUserName,
-        publisherRole: roleName || "Usuario", // 👈 rol del que está publicando ahora
+        publisherRole: roleName || "Usuario",
         attachments: adjuntosInsertados.map((a) => ({
           id: a.id_adjunto,
           name: a.attachment_name,
@@ -314,8 +292,6 @@ export default function AnnouncementsSection() {
       };
 
       setAnnouncements((prev) => [nuevoAnuncio, ...prev]);
-
-      // limpiar formulario
       handleCancel();
     } catch (err) {
       console.error("Error general al publicar anuncio:", err);
@@ -325,7 +301,6 @@ export default function AnnouncementsSection() {
     }
   };
 
-  // 4️⃣ Cambiar estado de un anuncio existente
   const handleToggleEstado = async (id, currentEstado) => {
     if (!canManageAnnouncements) return;
 
@@ -344,14 +319,7 @@ export default function AnnouncementsSection() {
       }
 
       setAnnouncements((prev) =>
-        prev.map((a) =>
-          a.id === id
-            ? {
-                ...a,
-                estado: data.estado,
-              }
-            : a
-        )
+        prev.map((a) => (a.id === id ? { ...a, estado: data.estado } : a))
       );
     } catch (err) {
       console.error("Error general en toggle estado:", err);
@@ -359,18 +327,16 @@ export default function AnnouncementsSection() {
     }
   };
 
-  // 5️⃣ Eliminar en front (solo admins/superadmin; solo UI)
   const handleDelete = (id) => {
     if (!canManageAnnouncements) return;
     setAnnouncements((prev) => prev.filter((a) => a.id !== id));
   };
 
-  // 6️⃣ Ver adjunto en nueva pestaña (signed URL)
   const handleViewAttachment = async (path) => {
     try {
       const { data, error } = await supabase.storage
         .from("novedades")
-        .createSignedUrl(path, 60 * 60); // 1 hora
+        .createSignedUrl(path, 60 * 60);
 
       if (error || !data) {
         console.error("Error creando signed URL:", error);
@@ -385,7 +351,6 @@ export default function AnnouncementsSection() {
     }
   };
 
-  // 7️⃣ Cancelar → limpiar todo
   const handleCancel = () => {
     setTitle("");
     setDescription("");
@@ -408,45 +373,55 @@ export default function AnnouncementsSection() {
   if (loading) {
     return (
       <section className="space-y-4">
-        <p className="text-sm text-slate-500">Cargando anuncios...</p>
+        <p className="text-sm text-slate-500 dark:text-white/60">
+          Cargando anuncios...
+        </p>
       </section>
     );
   }
 
   return (
     <section className="space-y-4">
-      {/* Botón Añadir (solo admin / superadmin) */}
       {canManageAnnouncements && (
         <div>
           <ButtonA onClick={() => setShowForm((v) => !v)} />
         </div>
       )}
 
-      {/* Formulario */}
       {showForm && canManageAnnouncements && (
         <form
           onSubmit={handleSubmit}
-          className="rounded-2xl border border-slate-200 bg-slate-50 p-4 shadow-sm space-y-4"
+          className="
+            rounded-2xl p-4 shadow-sm space-y-4
+            border border-slate-200 bg-slate-50
+            dark:border-white/10 dark:bg-white/5
+          "
         >
-          <h3 className="text-sm font-semibold text-slate-800">
+          <h3 className="text-sm font-semibold text-slate-800 dark:text-white">
             Nuevo anuncio
           </h3>
 
-          {/* Título */}
           <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-600">Título</label>
+            <label className="text-xs font-medium text-slate-600 dark:text-white/70">
+              Título
+            </label>
             <input
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="Título del anuncio"
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
+              className="
+                w-full rounded-lg px-3 py-2 text-sm outline-none transition
+                border border-slate-300 bg-white text-slate-900
+                focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20
+                dark:border-white/10 dark:bg-black/40 dark:text-white
+                dark:placeholder:text-white/40
+              "
             />
           </div>
 
-          {/* Descripción */}
           <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-600">
+            <label className="text-xs font-medium text-slate-600 dark:text-white/70">
               Descripción
             </label>
             <textarea
@@ -454,60 +429,78 @@ export default function AnnouncementsSection() {
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Descripción del anuncio..."
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
+              className="
+                w-full rounded-lg px-3 py-2 text-sm outline-none transition
+                border border-slate-300 bg-white text-slate-900
+                focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20
+                dark:border-white/10 dark:bg-black/40 dark:text-white
+                dark:placeholder:text-white/40
+              "
             />
           </div>
 
-          {/* Adjuntos (máx 4) */}
           <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-600">
+            <label className="text-xs font-medium text-slate-600 dark:text-white/70">
               Adjuntos (máx. 4)
             </label>
+
             <input
               type="file"
               multiple
               onChange={handleAttachmentChange}
-              className="block w-full text-xs text-slate-700 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-900 file:px-4 file:py-2 file:text-xs file:font-medium file:text-white hover:file:bg-slate-700"
+              className="
+                block w-full text-xs
+                text-slate-700 dark:text-white/70
+                file:mr-3 file:rounded-lg file:border-0
+                file:bg-slate-900 file:px-4 file:py-2 file:text-xs file:font-medium file:text-white
+                hover:file:bg-slate-700
+                dark:file:bg-white/10 dark:hover:file:bg-white/20
+              "
             />
 
             {files.length > 0 && (
-              <ul className="mt-2 space-y-1 rounded-lg bg-white px-3 py-2 text-[11px] text-slate-700 border border-slate-200">
+              <ul
+                className="
+                  mt-2 space-y-1 rounded-lg px-3 py-2 text-[11px]
+                  border border-slate-200 bg-white text-slate-700
+                  dark:border-white/10 dark:bg-black/40 dark:text-white/75
+                "
+              >
                 {files.map((f, idx) => (
-                  <li
-                    key={idx}
-                    className="flex justify-between items-center gap-2"
-                  >
+                  <li key={idx} className="flex justify-between items-center gap-2">
                     <span className="truncate">{f.name}</span>
                     <button
                       type="button"
                       onClick={() => handleRemoveFile(idx)}
-                      className="text-[11px] font-semibold text-red-600 hover:underline"
+                      className="text-[11px] font-semibold text-red-600 dark:text-red-300 hover:underline"
                     >
                       X
                     </button>
                   </li>
                 ))}
-                <p className="text-[10px] text-slate-500 mt-1">
+                <p className="text-[10px] text-slate-500 dark:text-white/50 mt-1">
                   Archivos seleccionados: {files.length} / 4
                 </p>
               </ul>
             )}
           </div>
 
-          {/* Estado (switch) */}
           <div className="flex items-center justify-between gap-3 pt-2">
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-slate-500 dark:text-white/60">
               Se publicará como{" "}
               <span className="font-semibold">{currentUserName}</span>.
             </p>
 
             <div className="flex items-center gap-2">
-              <span className="text-xs text-slate-600">Estado:</span>
+              <span className="text-xs text-slate-600 dark:text-white/70">
+                Estado:
+              </span>
+
               <button
                 type="button"
                 onClick={() => setIsActive((v) => !v)}
                 className={`relative inline-flex h-5 w-10 items-center rounded-full transition ${
-                  isActive ? "bg-emerald-500" : "bg-slate-300"
+                  isActive ? "bg-emerald-500" : "bg-slate-300 dark:bg-white/20"
                 }`}
               >
                 <span
@@ -516,25 +509,33 @@ export default function AnnouncementsSection() {
                   }`}
                 />
               </button>
-              <span className="text-xs text-slate-600">
+
+              <span className="text-xs text-slate-600 dark:text-white/70">
                 {isActive ? "Activo" : "Inactivo"}
               </span>
             </div>
           </div>
 
-          {/* Acciones */}
           <div className="flex flex-wrap items-center justify-end gap-2">
             <button
               type="button"
               onClick={handleCancel}
-              className="rounded-lg border border-slate-300 px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100"
+              className="
+                rounded-lg px-3 py-1 text-xs font-medium transition
+                border border-slate-300 text-slate-600 hover:bg-slate-100
+                dark:border-white/10 dark:text-white/70 dark:hover:bg-white/10
+              "
             >
               Cancelar
             </button>
+
             <button
               type="submit"
               disabled={saving}
-              className="rounded-lg bg-purple-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-purple-700 disabled:opacity-50"
+              className="
+                rounded-lg bg-purple-600 px-4 py-1.5 text-xs font-semibold text-white
+                hover:bg-purple-700 disabled:opacity-50 transition
+              "
             >
               {saving ? "Publicando..." : "Publicar"}
             </button>
@@ -542,14 +543,13 @@ export default function AnnouncementsSection() {
         </form>
       )}
 
-      {/* Lista de anuncios */}
       <div className="space-y-3">
         {announcements.map((a) => (
           <AnnouncementCard
             key={a.id}
             icon="calendar"
-            role={a.publisherRole}    // 🔥 Rol FIJO del usuario que publicó
-            title={a.title}           // debajo del rol
+            role={a.publisherRole}
+            title={a.title}
             footer={
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span>
@@ -559,17 +559,16 @@ export default function AnnouncementsSection() {
                 </span>
 
                 <div className="flex items-center gap-3">
-                  {/* Switch estado solo para admin/superadmin */}
                   {canManageAnnouncements && (
                     <div className="flex items-center gap-1">
-                      <span className="text-[11px] text-slate-600">
+                      <span className="text-[11px] text-slate-600 dark:text-white/60">
                         {a.estado ? "Activo" : "Inactivo"}
                       </span>
                       <button
                         type="button"
                         onClick={() => handleToggleEstado(a.id, a.estado)}
                         className={`relative inline-flex h-4 w-8 items-center rounded-full transition ${
-                          a.estado ? "bg-emerald-500" : "bg-slate-300"
+                          a.estado ? "bg-emerald-500" : "bg-slate-300 dark:bg-white/20"
                         }`}
                       >
                         <span
@@ -581,12 +580,11 @@ export default function AnnouncementsSection() {
                     </div>
                   )}
 
-                  {/* Eliminar solo UI por ahora */}
                   {canManageAnnouncements && (
                     <button
                       type="button"
                       onClick={() => handleDelete(a.id)}
-                      className="text-xs font-semibold text-red-600 hover:underline"
+                      className="text-xs font-semibold text-red-600 dark:text-red-300 hover:underline"
                     >
                       Eliminar
                     </button>
@@ -598,7 +596,6 @@ export default function AnnouncementsSection() {
             <div className="space-y-2">
               <p className="text-sm">{a.description}</p>
 
-              {/* Adjuntos visualizados de forma estándar + miniaturas si son imagen */}
               {a.attachments && a.attachments.length > 0 && (
                 <div className="mt-2 space-y-1">
                   {a.attachments.map((att) => (
@@ -615,7 +612,7 @@ export default function AnnouncementsSection() {
         ))}
 
         {announcements.length === 0 && (
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-slate-500 dark:text-white/60">
             Aún no hay anuncios.
             {canManageAnnouncements && (
               <>
@@ -631,12 +628,7 @@ export default function AnnouncementsSection() {
   );
 }
 
-/**
- * Componente para mostrar un adjunto con:
- * - miniatura si es imagen
- * - nombre del archivo
- * - botón "Ver" que usa signed URL
- */
+/* Adjuntos (DARK MODE completo) */
 function AttachmentPreview({ attachment, onOpen }) {
   const [previewUrl, setPreviewUrl] = useState(null);
 
@@ -654,42 +646,46 @@ function AttachmentPreview({ attachment, onOpen }) {
       try {
         const { data, error } = await supabase.storage
           .from("novedades")
-          .createSignedUrl(attachment.path, 60 * 30); // 30 minutos
+          .createSignedUrl(attachment.path, 60 * 30);
 
-        if (!error && data && isMounted) {
-          setPreviewUrl(data.signedUrl);
-        }
+        if (!error && data && isMounted) setPreviewUrl(data.signedUrl);
       } catch (err) {
         console.error("Error cargando preview de adjunto:", err);
       }
     };
 
     loadPreview();
-
     return () => {
       isMounted = false;
     };
   }, [attachment.path, isImage]);
 
   return (
-    <div className="flex items-center justify-between rounded-md bg-slate-50 px-3 py-1.5 text-[11px] text-slate-700 border border-slate-200">
+    <div
+      className="
+        flex items-center justify-between rounded-md px-3 py-1.5 text-[11px] border
+        bg-slate-50 text-slate-700 border-slate-200
+        dark:bg-black/40 dark:text-white/75 dark:border-white/10
+      "
+    >
       <div className="flex items-center gap-2 min-w-0">
         {isImage && previewUrl ? (
           <img
             src={previewUrl}
             alt={attachment.name}
-            className="h-10 w-10 rounded border border-slate-200 object-cover flex-shrink-0"
+            className="h-10 w-10 rounded border border-slate-200 dark:border-white/10 object-cover flex-shrink-0"
           />
         ) : (
-          <Paperclip className="h-3 w-3 flex-shrink-0 text-slate-500" />
+          <Paperclip className="h-3 w-3 flex-shrink-0 text-slate-500 dark:text-white/50" />
         )}
+
         <span className="truncate">{attachment.name}</span>
       </div>
 
       <button
         type="button"
         onClick={() => onOpen(attachment.path)}
-        className="text-[11px] font-semibold text-purple-700 hover:underline flex-shrink-0"
+        className="text-[11px] font-semibold text-purple-700 dark:text-purple-300 hover:underline flex-shrink-0"
       >
         Ver
       </button>

@@ -27,6 +27,7 @@ export default function Header() {
   const { user } = useUser();
   const pathname = usePathname();
 
+								   
   const [perfil, setPerfil] = useState(null);
   const [direccion, setDireccion] = useState(null);
   const [tipoDireccion, setTipoDireccion] = useState(null);
@@ -56,6 +57,7 @@ export default function Header() {
 
     async function cargarPerfilCompleto() {
       try {
+											  
         const { data: usuario, error: errUsuario } = await supabase
           .from("usuarios")
           .select("*")
@@ -64,6 +66,7 @@ export default function Header() {
 
         if (errUsuario || !usuario) return;
 
+													  
         if (usuario.idrol) {
           const { data: rolData } = await supabase
             .from("roles")
@@ -74,6 +77,7 @@ export default function Header() {
           if (rolData) setRol(rolData);
         }
 
+						 
         const { data: perfilData, error: errPerfil } = await supabase
           .from("perfilesusuarios")
           .select("*")
@@ -83,6 +87,7 @@ export default function Header() {
         if (errPerfil || !perfilData) return;
         setPerfil(perfilData);
 
+							 
         if (perfilData?.id_direccion) {
           const { data: dirData } = await supabase
             .from("direcciones")
@@ -103,6 +108,7 @@ export default function Header() {
           }
         }
 
+						 
         if (perfilData?.id_unidad) {
           const { data: unidadData } = await supabase
             .from("unidades")
@@ -113,6 +119,7 @@ export default function Header() {
           setUnidad(unidadData);
         }
 
+								 
         if (perfilData?.tipo_documento) {
           const { data: tipoDocData } = await supabase
             .from("tiposdocumentos")
@@ -133,16 +140,25 @@ export default function Header() {
   // Ocultar en login
   if (pathname === "/") return null;
 
+																													
+						  
+																													
   const rolId = rol?.idrol;
+
+				  
   const canPagos = rolId === 1 || rolId === 2 || rolId === 3;
+				
   const canPqr = rolId === 1 || rolId === 2 || rolId === 3;
+					 
   const canReservas = rolId === 1 || rolId === 2 || rolId === 3 || rolId === 4;
+					
   const canVisitas = rolId === 1 || rolId === 2 || rolId === 3 || rolId === 4;
   const canAdminModule = rolId === 1 || rolId === 2;
 
   const esAdmin = rolId === 1 || rolId === 2;
   const etiquetaRol = rol?.nombre_rol ? `${rol.nombre_rol}` : "";
 
+										
   let direccionTexto = "No disponible";
   if (direccion && tipoDireccion && !esAdmin) {
     direccionTexto = `${tipoDireccion.descripcion} ${direccion.grupo} ${tipoDireccion.nombre_grupo} ${direccion.complemento}`;
@@ -250,6 +266,13 @@ export default function Header() {
             <User className="h-4 w-4" />
             <span className="max-w-[180px] truncate">{nombreParaHeader}</span>
           </button>
+
+																	 
+							  
+										   
+																											 
+				   
+			
         </div>
       </nav>
 
@@ -257,7 +280,7 @@ export default function Header() {
       {menuOpen && (
         <>
           <div
-            className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[10000]"
+            className="fixed inset-0 bg-black/40 backdrop-blur-sm"
             onClick={() => setMenuOpen(false)}
           />
 
@@ -266,6 +289,7 @@ export default function Header() {
               Perfil de Usuario
             </h2>
 
+									   
             <div className="flex flex-col items-center mb-6">
               <div className="h-16 w-16 rounded-full bg-gradient-to-tr from-purple-500 to-pink-500 flex items-center justify-center text-white">
                 <span className="text-xl font-bold">
@@ -284,19 +308,23 @@ export default function Header() {
               )}
             </div>
 
+								
             <div className="space-y-3 text-sm text-slate-700 dark:text-white/80">
               <p>
                 <span className="font-semibold">Email: </span>
                 {perfil?.correo || "No disponible"}
               </p>
+
               <p>
                 <span className="font-semibold">Teléfono: </span>
                 {perfil?.telefono || "No disponible"}
               </p>
+
               <p>
                 <span className="font-semibold">Tipo documento: </span>
                 {tipoDocumento?.nombre || "No disponible"}
               </p>
+
               <p>
                 <span className="font-semibold">Documento: </span>
                 {perfil?.nro_documento || "No disponible"}
@@ -315,6 +343,7 @@ export default function Header() {
               </p>
             </div>
 
+						   
             <div className="mt-6 flex flex-col gap-3">
               <button className="w-full py-2 rounded-lg bg-purple-600 text-white hover:bg-purple-700 transition">
                 Editar Perfil
