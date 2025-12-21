@@ -1,30 +1,55 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useTheme } from "next-themes";
 import { Moon, Sun } from "lucide-react";
 
+function getSystemTheme() {
+  if (typeof window === "undefined") return "light";
+  return window.matchMedia("(prefers-color-scheme: dark)").matches
+    ? "dark"
+    : "light";
+}
+
+function applyTheme(theme) {
+  const root = document.documentElement;
+  if (theme === "dark") root.classList.add("dark");
+  else root.classList.remove("dark");
+}
+
 export default function ThemeSwitch() {
-  const { theme, setTheme, systemTheme } = useTheme();
+  const [theme, setTheme] = useState("light");
   const [mounted, setMounted] = useState(false);
 
-  useEffect(() => setMounted(true), []);
-  if (!mounted) return null;
+  useEffect(() => {
+    const saved = localStorage.getItem("theme");
+    const initial = saved ?? getSystemTheme();
+    setTheme(initial);
+    applyTheme(initial);
+    setMounted(true);
+  }, []);
 
-  const current = theme === "system" ? systemTheme : theme;
-  const isDark = current === "dark";
+  useEffect(() => {
+    if (!mounted) return;
+    localStorage.setItem("theme", theme);
+    applyTheme(theme);
+  }, [theme, mounted]);
+
+  if (!mounted) return null;
 
   return (
     <button
-      type="button"
-      onClick={() => setTheme(isDark ? "light" : "dark")}
-      className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50
-                 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
+      onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+      className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-2 text-sm shadow-sm transition hover:bg-accent"
       aria-label="Cambiar tema"
-      title="Cambiar tema"
     >
-      {isDark ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
-      <span className="hidden sm:inline">{isDark ? "Oscuro" : "Claro"}</span>
+      {theme === "dark" ? (
+        <Moon className="h-4 w-4" />
+      ) : (
+        <Sun className="h-4 w-4" />
+      )}
+      <span className="hidden sm:inline">
+        {theme === "dark" ? "Oscuro" : "Claro"}
+      </span>
     </button>
   );
 }

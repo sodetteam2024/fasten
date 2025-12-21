@@ -14,6 +14,7 @@ import { SignOutButton, useUser } from "@clerk/nextjs";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
+import ThemeSwitch from "@/app/components/theme-switch";
 
 
 const supabase = createClient(
