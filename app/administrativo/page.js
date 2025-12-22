@@ -20,8 +20,8 @@ import RegistrarUsuarioForm from "@/components/RegistrarUsuarioForm";
 import UsuariosActivos from "@/components/UsuariosActivos";
 
 // ✅ tus rutas reales (sin carpeta admin)
-import AdminAreas from "@/components/adminAreas";
-import AdminReservations from "@/components/adminReservations";
+import AdminAreas from "@/components/AdminAreas";
+import AdminReservations from "@/components/AdminReservations";
 
 export default function PanelAdministrativo() {
   // Grupo abierto (accordion simple)
