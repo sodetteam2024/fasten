@@ -15,8 +15,8 @@ import {
 
 import RegistrarUsuarioForm from "@/components/RegistrarUsuarioForm";
 import UsuariosActivos from "@/components/UsuariosActivos";
-import AdminAreas from "@/components/admin/AdminAreas";
-import AdminReservations from "@/components/admin/AdminReservations";
+import AdminAreas from "@/components/AdminAreas";
+import AdminReservations from "@/components/AdminReservations";
 
 export default function PanelAdministrativo() {
   const [activeModule, setActiveModule] = useState("usuarios"); // usuarios | reservas | pagos | visitas | areas
