@@ -1,3 +1,4 @@
+// app/administrativo/page.js
 "use client";
 
 import { useState } from "react";
@@ -10,17 +11,37 @@ import {
   UserCheck,
   UserPlus,
   UserX,
-  Building2,
+  MapPinned,
+  ClipboardCheck,
+  ChevronDown,
 } from "lucide-react";
 
 import RegistrarUsuarioForm from "@/components/RegistrarUsuarioForm";
 import UsuariosActivos from "@/components/UsuariosActivos";
-import AdminAreas from "@/components/AdminAreas";
-import AdminReservations from "@/components/AdminReservations";
+
+// ✅ tus rutas reales (sin carpeta admin)
+import AdminAreas from "@/components/adminAreas";
+import AdminReservations from "@/components/adminReservations";
 
 export default function PanelAdministrativo() {
-  const [activeModule, setActiveModule] = useState("usuarios"); // usuarios | reservas | pagos | visitas | areas
-  const [activeUserSub, setActiveUserSub] = useState("activos"); // activos | registrar | baneados
+  // Grupo abierto (accordion simple)
+  const [openGroup, setOpenGroup] = useState("usuarios"); // "usuarios" | "reservas" | null
+
+  // Submódulos activos
+  const [activeUserSub, setActiveUserSub] = useState("activos"); // "activos" | "registrar" | "baneados"
+  const [activeReservaSub, setActiveReservaSub] = useState("reservas"); // "areas" | "reservas"
+
+  // Helpers
+  const toggleGroup = (groupName) => {
+    setOpenGroup((prev) => (prev === groupName ? null : groupName));
+  };
+
+  const itemClass = (isActive) =>
+    `flex items-center gap-2 transition ${
+      isActive
+        ? "text-purple-500 font-semibold"
+        : "text-muted-foreground hover:text-purple-400"
+    }`;
 
   return (
     <div className="min-h-[calc(100vh-64px)] px-6 py-8 text-foreground">
@@ -38,7 +59,7 @@ export default function PanelAdministrativo() {
         <div className="flex gap-10">
           {/* SIDEBAR */}
           <aside className="w-64 pr-6 border-r border-black/10 dark:border-white/10">
-            {/* Buscador (por ahora solo UI) */}
+            {/* Buscador */}
             <div className="mb-6">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -58,34 +79,34 @@ export default function PanelAdministrativo() {
               </div>
             </div>
 
+            {/* Menú */}
             <nav className="space-y-6 text-sm">
-              {/* USUARIOS */}
+              {/* =======================
+                  Grupo Usuarios (desplegable)
+                  ======================= */}
               <div>
                 <button
-                  onClick={() => setActiveModule("usuarios")}
-                  className={`w-full flex items-center justify-between transition ${
-                    activeModule === "usuarios"
-                      ? "text-purple-500 font-semibold"
-                      : "text-foreground/80 hover:text-purple-400"
-                  }`}
                   type="button"
+                  onClick={() => toggleGroup("usuarios")}
+                  className="w-full flex items-center justify-between mb-2"
                 >
-                  <span className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 font-semibold">
                     <UsersIcon className="h-4 w-4" />
-                    Usuarios
-                  </span>
+                    <span>Usuarios</span>
+                  </div>
+
+                  <ChevronDown
+                    className={`h-4 w-4 text-muted-foreground transition ${
+                      openGroup === "usuarios" ? "rotate-180" : ""
+                    }`}
+                  />
                 </button>
 
-                {activeModule === "usuarios" && (
-                  <div className="ml-5 mt-3 border-l border-black/10 dark:border-white/10 pl-3 space-y-2 text-xs">
+                {openGroup === "usuarios" && (
+                  <div className="ml-5 border-l border-black/10 dark:border-white/10 pl-3 space-y-2 text-xs">
                     <button
                       onClick={() => setActiveUserSub("activos")}
-                      className={`flex items-center gap-2 transition ${
-                        activeUserSub === "activos"
-                          ? "text-purple-500 font-semibold"
-                          : "text-muted-foreground hover:text-purple-400"
-                      }`}
-                      type="button"
+                      className={itemClass(activeUserSub === "activos")}
                     >
                       <UserCheck className="h-3 w-3" />
                       Activos
@@ -93,12 +114,7 @@ export default function PanelAdministrativo() {
 
                     <button
                       onClick={() => setActiveUserSub("registrar")}
-                      className={`flex items-center gap-2 transition ${
-                        activeUserSub === "registrar"
-                          ? "text-purple-500 font-semibold"
-                          : "text-muted-foreground hover:text-purple-400"
-                      }`}
-                      type="button"
+                      className={itemClass(activeUserSub === "registrar")}
                     >
                       <UserPlus className="h-3 w-3" />
                       Registrar
@@ -106,12 +122,7 @@ export default function PanelAdministrativo() {
 
                     <button
                       onClick={() => setActiveUserSub("baneados")}
-                      className={`flex items-center gap-2 transition ${
-                        activeUserSub === "baneados"
-                          ? "text-purple-500 font-semibold"
-                          : "text-muted-foreground hover:text-purple-400"
-                      }`}
-                      type="button"
+                      className={itemClass(activeUserSub === "baneados")}
                     >
                       <UserX className="h-3 w-3" />
                       Baneados
@@ -120,57 +131,56 @@ export default function PanelAdministrativo() {
                 )}
               </div>
 
-              {/* RESERVAS */}
-              <button
-                onClick={() => setActiveModule("reservas")}
-                className={`flex items-center gap-2 transition ${
-                  activeModule === "reservas"
-                    ? "text-purple-500 font-semibold"
-                    : "text-muted-foreground hover:text-purple-400"
-                }`}
-                type="button"
-              >
-                <CalendarDays className="h-4 w-4" />
-                Reservas
-              </button>
+              {/* =======================
+                  Grupo Reservas (desplegable) ✅ nuevo
+                  ======================= */}
+              <div>
+                <button
+                  type="button"
+                  onClick={() => toggleGroup("reservas")}
+                  className="w-full flex items-center justify-between"
+                >
+                  <div className="flex items-center gap-2 font-semibold">
+                    <CalendarDays className="h-4 w-4" />
+                    <span>Reservas</span>
+                  </div>
 
-              {/* ÁREAS */}
-              <button
-                onClick={() => setActiveModule("areas")}
-                className={`flex items-center gap-2 transition ${
-                  activeModule === "areas"
-                    ? "text-purple-500 font-semibold"
-                    : "text-muted-foreground hover:text-purple-400"
-                }`}
-                type="button"
-              >
-                <Building2 className="h-4 w-4" />
-                Áreas / Espacios
-              </button>
+                  <ChevronDown
+                    className={`h-4 w-4 text-muted-foreground transition ${
+                      openGroup === "reservas" ? "rotate-180" : ""
+                    }`}
+                  />
+                </button>
 
-              {/* PAGOS / VISITAS (placeholder) */}
-              <button
-                onClick={() => setActiveModule("pagos")}
-                className={`flex items-center gap-2 transition ${
-                  activeModule === "pagos"
-                    ? "text-purple-500 font-semibold"
-                    : "text-muted-foreground hover:text-purple-400"
-                }`}
-                type="button"
-              >
+                {openGroup === "reservas" && (
+                  <div className="ml-5 mt-2 border-l border-black/10 dark:border-white/10 pl-3 space-y-2 text-xs">
+                    <button
+                      onClick={() => setActiveReservaSub("areas")}
+                      className={itemClass(activeReservaSub === "areas")}
+                    >
+                      <MapPinned className="h-3 w-3" />
+                      Áreas / Espacios
+                    </button>
+
+                    <button
+                      onClick={() => setActiveReservaSub("reservas")}
+                      className={itemClass(activeReservaSub === "reservas")}
+                    >
+                      <ClipboardCheck className="h-3 w-3" />
+                      Solicitudes de reserva
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Pagos */}
+              <button className="flex items-center gap-2 text-muted-foreground hover:text-purple-400 transition">
                 <CreditCard className="h-4 w-4" />
                 Pagos
               </button>
 
-              <button
-                onClick={() => setActiveModule("visitas")}
-                className={`flex items-center gap-2 transition ${
-                  activeModule === "visitas"
-                    ? "text-purple-500 font-semibold"
-                    : "text-muted-foreground hover:text-purple-400"
-                }`}
-                type="button"
-              >
+              {/* Visitas */}
+              <button className="flex items-center gap-2 text-muted-foreground hover:text-purple-400 transition">
                 <Users className="h-4 w-4" />
                 Visitas
               </button>
@@ -183,7 +193,8 @@ export default function PanelAdministrativo() {
               Panel Administrativo
             </h1>
 
-            {activeModule === "usuarios" && (
+            {/* Render de Usuarios */}
+            {openGroup === "usuarios" && (
               <>
                 {activeUserSub === "activos" && <UsuariosActivos />}
                 {activeUserSub === "registrar" && <RegistrarUsuarioForm />}
@@ -191,30 +202,28 @@ export default function PanelAdministrativo() {
                   <div className="rounded-xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 p-5">
                     <p className="font-semibold mb-2">Usuarios baneados</p>
                     <p className="text-muted-foreground text-sm">
-                      Aquí aparecerán los usuarios marcados como inactivos/restringidos.
+                      Aquí aparecerán los usuarios marcados como
+                      inactivos/restringidos.
                     </p>
                   </div>
                 )}
               </>
             )}
 
-            {activeModule === "areas" && <AdminAreas />}
-            {activeModule === "reservas" && <AdminReservations />}
-
-            {activeModule === "pagos" && (
-              <div className="rounded-xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 p-5">
-                <p className="font-semibold mb-2">Pagos</p>
-                <p className="text-muted-foreground text-sm">
-                  Próximo: panel de cargos/pagos con filtros y conciliación.
-                </p>
-              </div>
+            {/* Render de Reservas */}
+            {openGroup === "reservas" && (
+              <>
+                {activeReservaSub === "areas" && <AdminAreas />}
+                {activeReservaSub === "reservas" && <AdminReservations />}
+              </>
             )}
 
-            {activeModule === "visitas" && (
+            {/* Si no hay grupo abierto */}
+            {!openGroup && (
               <div className="rounded-xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 p-5">
-                <p className="font-semibold mb-2">Visitas</p>
+                <p className="font-semibold mb-2">Selecciona un módulo</p>
                 <p className="text-muted-foreground text-sm">
-                  Próximo: listado, permisos, aprobaciones, historial.
+                  Elige una opción del menú lateral para empezar.
                 </p>
               </div>
             )}
