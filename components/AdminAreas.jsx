@@ -5,7 +5,7 @@ import { useUser } from "@clerk/nextjs";
 import { supabase } from "@/lib/supabaseClient";
 import { Plus, Save, Image as ImageIcon, Trash2, Loader2 } from "lucide-react";
 
-const AREAS_BUCKET = "areas"; // 👈 si tu bucket se llama distinto, cámbialo aquí
+const AREAS_BUCKET = "areas";
 const MAX_PHOTOS = 6;
 const SIGNED_URL_TTL = 60 * 60; // 1 hora
 
@@ -18,26 +18,35 @@ function safeInt(v) {
   return Number.isFinite(n) ? n : 0;
 }
 
-// ✅ Devuelve URL usable: intenta publicUrl, si no sirve usa signedUrl
+// ✅ URL: signedUrl primero (como tu carrusel), si falla intenta publicUrl
 async function resolveStorageUrl(path) {
   if (!path) return "";
 
-  // si ya es URL completa
   if (path.startsWith("http://") || path.startsWith("https://")) return path;
 
-  // 1) publicUrl (si bucket es público)
-  const { data: pub } = supabase.storage.from(AREAS_BUCKET).getPublicUrl(path);
-  const publicUrl = pub?.publicUrl || "";
-
-  // 2) signedUrl (para bucket privado o cuando public no sirve)
-  const { data: signed, error: signedErr } = await supabase.storage
+  const { data: signed, error: errSigned } = await supabase.storage
     .from(AREAS_BUCKET)
     .createSignedUrl(path, SIGNED_URL_TTL);
 
-  if (!signedErr && signed?.signedUrl) return signed.signedUrl;
+  if (!errSigned && signed?.signedUrl) return signed.signedUrl;
 
-  // si no pudo firmar, al menos devolvemos publicUrl
-  return publicUrl;
+  const { data: pub } = supabase.storage.from(AREAS_BUCKET).getPublicUrl(path);
+  return pub?.publicUrl || "";
+}
+
+// ✅ Insert DB por API (bypass RLS)
+async function insertAreaPhotoViaApi({ id_area, path, orden }) {
+  const res = await fetch("/api/areas-photos", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id_area, path, orden }),
+  });
+
+  const json = await res.json();
+  if (!res.ok) {
+    throw new Error(json?.error || "Error insertando en DB");
+  }
+  return json.row; // { id, id_area, path, orden }
 }
 
 export default function AdminAreas() {
@@ -89,6 +98,9 @@ export default function AdminAreas() {
 
       if (!perfilDb?.id_unidad) {
         setAreas([]);
+        setSelected(null);
+        setForm(null);
+        setPhotos([]);
         setLoading(false);
         return;
       }
@@ -102,6 +114,7 @@ export default function AdminAreas() {
         .order("id", { ascending: true });
 
       if (errAreas) console.error(errAreas);
+
       setAreas(a || []);
       setLoading(false);
 
@@ -144,11 +157,10 @@ export default function AdminAreas() {
       return;
     }
 
-    // ✅ generar URLs (signed o public)
     const mapped = await Promise.all(
       (data || []).map(async (p) => {
         const url = await resolveStorageUrl(p.path);
-        return { ...p, url };
+        return { ...p, url, pending: false };
       })
     );
 
@@ -209,7 +221,6 @@ export default function AdminAreas() {
       valor_hora: safeInt(form.valor_hora),
       valor_fijo: safeInt(form.valor_fijo),
       max_horas_fijo: safeInt(form.max_horas_fijo),
-      // no tocamos imagen_principal aquí a menos que tú quieras
     };
 
     const { error } = await supabase.from("areas").update(payload).eq("id", form.id);
@@ -226,85 +237,122 @@ export default function AdminAreas() {
     alert("Guardado ✅");
   };
 
-  // ========= UPLOAD PHOTOS =========
-  const onPickPhotos = async (e) => {
+  // ========= UPLOAD PHOTOS (con preview tipo carrusel + insert por API) =========
+  const onPickPhotos = (e) => {
     const files = Array.from(e.target.files || []);
     e.target.value = "";
 
     if (!canAdmin) return alert("Sin permisos.");
     if (!selected?.id) return alert("Selecciona un área.");
-    if (files.length === 0) return;
+    if (!files.length) return;
 
     const remaining = Math.max(0, MAX_PHOTOS - photos.length);
     const toUpload = files.slice(0, remaining);
-    if (toUpload.length === 0) return alert("Ya tienes 6 fotos en esta galería.");
 
-    setUploading(true);
+    if (!toUpload.length) return alert("Ya tienes 6 fotos en esta galería.");
 
-    try {
-      // ✅ baseOrden fijo para evitar duplicados
-      const baseOrden = photos.length;
+    // baseOrden fijo para no repetir orden
+    const baseOrden = photos.filter((p) => !p.pending).length;
 
-      for (let i = 0; i < toUpload.length; i++) {
-        const file = toUpload[i];
-        if (!file.type.startsWith("image/")) continue;
+    toUpload.forEach((file, index) => {
+      if (!file.type.startsWith("image/")) return;
 
-        const ext = file.name.split(".").pop()?.toLowerCase() || "jpg";
-        const filename = `${crypto.randomUUID()}.${ext}`;
-        const path = `area_${selected.id}/${filename}`;
+      const tempId = `temp-${Date.now()}-${index}`;
+      const previewUrl = URL.createObjectURL(file);
 
-        const { error: upErr } = await supabase.storage
-          .from(AREAS_BUCKET)
-          .upload(path, file, { upsert: false, contentType: file.type });
+      // 1) agrega preview inmediato
+      setPhotos((prev) => [
+        ...prev,
+        { id: tempId, id_area: selected.id, path: null, orden: baseOrden + index, url: previewUrl, pending: true },
+      ]);
 
-        if (upErr) {
-          console.error("Upload error:", upErr);
-          alert(`No se pudo subir una imagen: ${upErr.message}`);
-          continue;
-        }
+      // 2) sube + inserta en DB (API)
+      (async () => {
+        setUploading(true);
+        try {
+          const ext = file.name.split(".").pop()?.toLowerCase() || "jpg";
+          const filename = `${crypto.randomUUID()}.${ext}`;
+          const path = `area_${selected.id}/${filename}`;
 
-        const orden = baseOrden + i;
+          const { error: upErr } = await supabase.storage
+            .from(AREAS_BUCKET)
+            .upload(path, file, { upsert: false, contentType: file.type });
 
-        const { data: row, error: insErr } = await supabase
-          .from("areas_fotos")
-          .insert([{ id_area: selected.id, path, orden }])
-          .select("id, id_area, path, orden")
-          .single();
-
-        if (insErr) {
-          console.error("DB insert error:", insErr);
-          alert(`Subió al bucket pero no guardó en DB: ${insErr.message}`);
-          continue;
-        }
-
-        const url = await resolveStorageUrl(path);
-
-        setPhotos((prev) => [...prev, { ...row, url }]);
-
-        // ✅ si el área NO tiene imagen_principal, pon la primera foto como principal
-        const hasPrincipal = !!(form?.imagen_principal || selected?.imagen_principal);
-        if (!hasPrincipal && i === 0) {
-          const { error: upAreaErr } = await supabase
-            .from("areas")
-            .update({ imagen_principal: path })
-            .eq("id", selected.id);
-
-          if (!upAreaErr) {
-            setForm((p) => ({ ...p, imagen_principal: path }));
-            setAreas((prev) =>
-              prev.map((a) => (a.id === selected.id ? { ...a, imagen_principal: path } : a))
-            );
+          if (upErr) {
+            console.error("Upload error:", upErr);
+            alert(`No se pudo subir una imagen: ${upErr.message}`);
+            URL.revokeObjectURL(previewUrl);
+            setPhotos((prev) => prev.filter((p) => p.id !== tempId));
+            return;
           }
+
+          const orden = baseOrden + index;
+
+          // ✅ DB insert por API (bypass RLS)
+          let row;
+          try {
+            row = await insertAreaPhotoViaApi({ id_area: selected.id, path, orden });
+          } catch (err) {
+            console.error("API insert error:", err);
+            alert(`Subió al bucket pero no guardó en DB: ${err?.message || "error"}`);
+
+            // cleanup bucket
+            await supabase.storage.from(AREAS_BUCKET).remove([path]);
+
+            URL.revokeObjectURL(previewUrl);
+            setPhotos((prev) => prev.filter((p) => p.id !== tempId));
+            return;
+          }
+
+          const signedUrl = await resolveStorageUrl(path);
+
+          // reemplaza temp por real
+          URL.revokeObjectURL(previewUrl);
+          setPhotos((prev) =>
+            prev.map((p) =>
+              p.id === tempId
+                ? { ...p, id: row.id, id_area: row.id_area, path: row.path, orden: row.orden, url: signedUrl, pending: false }
+                : p
+            )
+          );
+
+          // si no hay imagen_principal, asigna la primera que subes
+          const hasPrincipal = !!(form?.imagen_principal || selected?.imagen_principal);
+          if (!hasPrincipal && index === 0) {
+            const { error: upAreaErr } = await supabase
+              .from("areas")
+              .update({ imagen_principal: path })
+              .eq("id", selected.id);
+
+            if (!upAreaErr) {
+              setForm((p) => ({ ...p, imagen_principal: path }));
+              setAreas((prev) =>
+                prev.map((a) => (a.id === selected.id ? { ...a, imagen_principal: path } : a))
+              );
+            }
+          }
+        } catch (err) {
+          console.error("Error general subiendo imagen:", err);
+          alert("Error inesperado al subir una imagen.");
+          URL.revokeObjectURL(previewUrl);
+          setPhotos((prev) => prev.filter((p) => p.id !== tempId));
+        } finally {
+          setUploading(false);
         }
-      }
-    } finally {
-      setUploading(false);
-    }
+      })();
+    });
   };
 
   const removePhoto = async (p) => {
     if (!canAdmin) return;
     if (!confirm("¿Eliminar esta foto?")) return;
+
+    // si es un preview pending
+    if (!p.path && p.url?.startsWith("blob:")) {
+      try { URL.revokeObjectURL(p.url); } catch {}
+      setPhotos((prev) => prev.filter((x) => x.id !== p.id));
+      return;
+    }
 
     const { error: delErr } = await supabase.from("areas_fotos").delete().eq("id", p.id);
     if (delErr) {
@@ -314,19 +362,12 @@ export default function AdminAreas() {
     }
 
     const { error: rmErr } = await supabase.storage.from(AREAS_BUCKET).remove([p.path]);
-    if (rmErr) {
-      console.warn("No se pudo borrar del bucket:", rmErr);
-    }
+    if (rmErr) console.warn("No se pudo borrar del bucket:", rmErr);
 
     setPhotos((prev) => prev.filter((x) => x.id !== p.id));
 
-    // Si borraste la foto que era principal, opcionalmente limpia principal
     if (form?.imagen_principal === p.path) {
-      const { error } = await supabase
-        .from("areas")
-        .update({ imagen_principal: null })
-        .eq("id", selected.id);
-
+      const { error } = await supabase.from("areas").update({ imagen_principal: null }).eq("id", selected.id);
       if (!error) {
         setForm((x) => ({ ...x, imagen_principal: null }));
         setAreas((prev) =>
@@ -493,7 +534,7 @@ export default function AdminAreas() {
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
                   <ImageIcon className="h-4 w-4" />
-                  <p className="font-semibold">Galería (máx 6)</p>
+                  <p className="font-semibold">Galería (máx {MAX_PHOTOS})</p>
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -530,25 +571,36 @@ export default function AdminAreas() {
                   {photos.map((p) => (
                     <div
                       key={p.id}
-                      className="rounded-xl overflow-hidden border border-white/10 bg-black/20"
+                      className="relative rounded-xl overflow-hidden border border-white/10 bg-black/20"
                     >
                       <div className="aspect-[4/3] bg-black/40">
                         <img
                           src={p.url}
                           alt="foto área"
                           className="h-full w-full object-cover"
-                          onError={() => console.warn("No cargó imagen (URL):", p.url, "path:", p.path)}
+                          draggable={false}
+                          onError={() =>
+                            console.warn("No cargó imagen (URL):", p.url, "path:", p.path)
+                          }
                         />
                       </div>
+
+                      {p.pending && (
+                        <div className="absolute inset-x-0 bottom-0 bg-black/60 px-2 py-1 text-[10px] text-white text-center">
+                          Subiendo...
+                        </div>
+                      )}
+
                       <div className="flex items-center justify-between p-2">
                         <span className="text-[11px] text-muted-foreground truncate">
-                          {p.path}
+                          {p.path || "pendiente..."}
                         </span>
                         <button
                           type="button"
                           onClick={() => removePhoto(p)}
                           className="p-2 rounded-lg hover:bg-white/10"
                           title="Eliminar"
+                          disabled={p.pending}
                         >
                           <Trash2 className="h-4 w-4 text-rose-400" />
                         </button>
@@ -561,8 +613,8 @@ export default function AdminAreas() {
               <div className="mt-4 text-xs text-muted-foreground">
                 {form.pricing_type === "fijo" ? (
                   <>
-                    Precio fijo: <b className="text-foreground">{money(form.valor_fijo)}</b> ·
-                    Máx horas: <b className="text-foreground">{safeInt(form.max_horas_fijo)}</b>
+                    Precio fijo: <b className="text-foreground">{money(form.valor_fijo)}</b> · Máx horas:{" "}
+                    <b className="text-foreground">{safeInt(form.max_horas_fijo)}</b>
                   </>
                 ) : (
                   <>
