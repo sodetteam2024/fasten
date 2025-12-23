@@ -40,14 +40,15 @@ import { supabase } from "@/lib/supabaseClient";
 import ReservationFormModal from "@/components/ReservationFormModal";
 
 /* =========================================================
-   CONFIG (AJUSTA ESTO)
+   CONFIG
 ========================================================= */
 const AREAS_BUCKET = "areas";
 const FOTOS_TABLE = "areas_fotos";
 const SIGNED_URL_TTL = 60 * 30; // 30 minutos
+const SIGNED_SAFETY_MS = 15_000; // margen para refrescar antes de expirar
 
 /* =========================================================
-   Helpers de fecha/hor
+   Helpers fecha/horario
 ========================================================= */
 function pad2(n) {
   return String(n).padStart(2, "0");
@@ -156,7 +157,6 @@ function pricingLabel(areaRow) {
     };
   }
 
-  // por hora (default)
   const vh = Number(areaRow?.valor_hora || 0);
   if (vh <= 0) return { main: "Gratuito", sub: "Por hora" };
 
@@ -164,9 +164,9 @@ function pricingLabel(areaRow) {
 }
 
 /* =========================================================
-   Storage URL helpers (bucket privado o público)
+   Storage URL helpers (con cache y refresh por expiración)
 ========================================================= */
-function getPublicUrl(path) {
+function tryPublicUrl(path) {
   if (!path) return null;
   try {
     const { data } = supabase.storage.from(AREAS_BUCKET).getPublicUrl(path);
@@ -176,17 +176,13 @@ function getPublicUrl(path) {
   }
 }
 
-async function getSignedUrl(path) {
+async function createSignedUrl(path) {
   if (!path) return null;
-  try {
-    const { data, error } = await supabase.storage
-      .from(AREAS_BUCKET)
-      .createSignedUrl(path, SIGNED_URL_TTL);
-    if (error) return null;
-    return data?.signedUrl || null;
-  } catch {
-    return null;
-  }
+  const { data, error } = await supabase.storage
+    .from(AREAS_BUCKET)
+    .createSignedUrl(path, SIGNED_URL_TTL);
+  if (error) return null;
+  return data?.signedUrl || null;
 }
 
 /* =========================================================
@@ -217,8 +213,8 @@ export default function ReservationsPage() {
   const [customEndTime, setCustomEndTime] = useState("");
   const [savingReservation, setSavingReservation] = useState(false);
 
-  // cache simple para urls (public o signed)
-  const [signedCache, setSignedCache] = useState(() => new Map());
+  // cache: path -> { url, expMs }
+  const [urlCache, setUrlCache] = useState(() => new Map());
 
   const [reservationForm, setReservationForm] = useState({
     guests: "",
@@ -238,21 +234,119 @@ export default function ReservationsPage() {
     return null;
   }
 
-  async function ensureSignedUrl(path) {
+  async function ensureUrl(path) {
     if (!path) return null;
     const key = String(path);
 
-    if (signedCache.has(key)) return signedCache.get(key);
+    const cached = urlCache.get(key);
+    if (cached?.url && cached?.expMs && Date.now() < cached.expMs) return cached.url;
 
-    const pub = getPublicUrl(path);
+    // 1) intentar público
+    const pub = tryPublicUrl(path);
     if (pub) {
-      setSignedCache((prev) => new Map(prev).set(key, pub));
+      setUrlCache((prev) => {
+        const next = new Map(prev);
+        next.set(key, { url: pub, expMs: Date.now() + 365 * 24 * 3600 * 1000 }); // “no expira”
+        return next;
+      });
       return pub;
     }
 
-    const signed = await getSignedUrl(path);
-    if (signed) setSignedCache((prev) => new Map(prev).set(key, signed));
-    return signed;
+    // 2) firmar
+    const signed = await createSignedUrl(path);
+    if (signed) {
+      setUrlCache((prev) => {
+        const next = new Map(prev);
+        next.set(key, {
+          url: signed,
+          expMs: Date.now() + SIGNED_URL_TTL * 1000 - SIGNED_SAFETY_MS,
+        });
+        return next;
+      });
+      return signed;
+    }
+
+    return null;
+  }
+
+  async function hydrateAreaImages(areas) {
+    const areaIds = (areas || []).map((a) => a.id);
+    const fotosByArea = new Map();
+
+    if (areaIds.length > 0) {
+      const { data: fotos, error: errFotos } = await supabase
+        .from(FOTOS_TABLE)
+        .select("id, id_area, path, orden, created_at")
+        .in("id_area", areaIds)
+        .order("orden", { ascending: true });
+
+      if (errFotos) {
+        console.warn("No se pudieron cargar fotos:", errFotos);
+      } else {
+        for (const f of fotos || []) {
+          const k = String(f.id_area);
+          if (!fotosByArea.has(k)) fotosByArea.set(k, []);
+          fotosByArea.get(k).push(f);
+        }
+      }
+    }
+
+    const mapped = await Promise.all(
+      (areas || []).map(async (a) => {
+        const Icon = iconForAreaName(a.nombre);
+        const price = pricingLabel(a);
+
+        const fotos = (fotosByArea.get(String(a.id)) || []).slice(0, 6);
+
+        // prioridad: imagen_principal -> primera foto
+        const heroPath = a.imagen_principal || fotos?.[0]?.path || null;
+        const heroImage = heroPath ? await ensureUrl(heroPath) : null;
+
+        const photos = await Promise.all(
+          fotos.map(async (f) => ({
+            id: f.id,
+            id_area: f.id_area,
+            path: f.path,
+            orden: f.orden ?? 0,
+            url: await ensureUrl(f.path),
+          }))
+        );
+
+        return {
+          id: a.id,
+          name: a.nombre,
+          icon: Icon,
+          description: "Reserva por horario según disponibilidad",
+          capacity: "Consultar",
+          hours: "Según disponibilidad",
+
+          pricing_type: a.pricing_type || "por_hora",
+          valor_hora: a.valor_hora ?? 0,
+          valor_fijo: a.valor_fijo ?? 0,
+          max_horas_fijo: a.max_horas_fijo ?? null,
+          price: price.main,
+          priceSub: price.sub,
+
+          heroPath,
+          heroImage,
+          photos,
+
+          color: "from-[#7b2ae6] to-[#f9b009]",
+          timeSlots: [
+            "6:00 AM - 8:00 AM",
+            "8:00 AM - 10:00 AM",
+            "10:00 AM - 12:00 PM",
+            "12:00 PM - 2:00 PM",
+            "2:00 PM - 4:00 PM",
+            "4:00 PM - 6:00 PM",
+            "6:00 PM - 8:00 PM",
+            "8:00 PM - 10:00 PM",
+          ],
+        };
+      })
+    );
+
+    return mapped;
   }
 
   /* =========================================================
@@ -316,88 +410,12 @@ export default function ReservationsPage() {
         console.error("Error cargando áreas:", errAreas);
         setSpaces([]);
       } else {
-        const areaIds = (areas || []).map((a) => a.id);
-
-        // ✅ fotos (columnas reales: id_area)
-        let fotosByArea = new Map();
-        if (areaIds.length > 0) {
-          const { data: fotos, error: errFotos } = await supabase
-            .from(FOTOS_TABLE)
-            .select("id, id_area, path, orden, created_at")
-            .in("id_area", areaIds)
-            .order("orden", { ascending: true });
-
-          if (errFotos) {
-            console.warn("No se pudieron cargar fotos:", errFotos);
-          } else {
-            for (const f of fotos || []) {
-              const k = String(f.id_area);
-              if (!fotosByArea.has(k)) fotosByArea.set(k, []);
-              fotosByArea.get(k).push(f);
-            }
-          }
-        }
-
-        const mapped = await Promise.all(
-          (areas || []).map(async (a) => {
-            const Icon = iconForAreaName(a.nombre);
-            const price = pricingLabel(a);
-
-            const fotos = (fotosByArea.get(String(a.id)) || []).slice(0, 6);
-
-            // ✅ prioridad: imagen_principal si existe, si no primera foto
-            const heroPath = a.imagen_principal || fotos?.[0]?.path || null;
-            const heroUrl = heroPath ? await ensureSignedUrl(heroPath) : null;
-
-            const photos = await Promise.all(
-              fotos.map(async (f) => ({
-                id: f.id,
-                id_area: f.id_area,
-                path: f.path,
-                orden: f.orden ?? 0,
-                url: await ensureSignedUrl(f.path),
-              }))
-            );
-
-            return {
-              id: a.id,
-              name: a.nombre,
-              icon: Icon,
-              description: "Reserva por horario según disponibilidad",
-              capacity: "Consultar",
-              hours: "Según disponibilidad",
-
-              pricing_type: a.pricing_type || "por_hora",
-              valor_hora: a.valor_hora ?? 0,
-              valor_fijo: a.valor_fijo ?? 0,
-              max_horas_fijo: a.max_horas_fijo ?? null,
-              price: price.main,
-              priceSub: price.sub,
-
-              heroImage: heroUrl,
-              heroPath,
-              photos,
-
-              color: "from-[#7b2ae6] to-[#f9b009]",
-              timeSlots: [
-                "6:00 AM - 8:00 AM",
-                "8:00 AM - 10:00 AM",
-                "10:00 AM - 12:00 PM",
-                "12:00 PM - 2:00 PM",
-                "2:00 PM - 4:00 PM",
-                "4:00 PM - 6:00 PM",
-                "6:00 PM - 8:00 PM",
-                "8:00 PM - 10:00 PM",
-              ],
-            };
-          })
-        );
-
-        setSpaces(mapped);
+        const mappedSpaces = await hydrateAreaImages(areas || []);
+        setSpaces(mappedSpaces);
       }
       setLoadingSpaces(false);
 
-      // reservas
+      // reservas del usuario (solo para “Mis reservas”)
       const { data: resv, error: errResv } = await supabase
         .from("reservas")
         .select(
@@ -490,10 +508,11 @@ export default function ReservationsPage() {
   }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* =========================================================
-     Selección de área
+     Selección de área (IMPORTANTÍSIMO: siempre usar el space fresco)
   ========================================================= */
   const handleSpaceSelect = (space) => {
-    setSelectedSpace(space);
+    const fresh = spaces.find((s) => String(s.id) === String(space.id)) || space;
+    setSelectedSpace(fresh);
     setShowReservationForm(true);
     setSelectedDate("");
     setSelectedTimeSlot("");
@@ -509,32 +528,15 @@ export default function ReservationsPage() {
     e.preventDefault();
     if (savingReservation) return;
 
-    if (!usuarioDb?.id_usuario) {
-      alert("No se pudo identificar el usuario en la base de datos.");
-      return;
-    }
-    if (!selectedSpace?.id) {
-      alert("Selecciona un área.");
-      return;
-    }
-    if (!selectedDate || !selectedTimeSlot) {
-      alert("Por favor selecciona una fecha y horario");
-      return;
-    }
-    if (!reservationForm.purpose?.trim()) {
-      alert("Por favor ingresa el motivo de la reserva.");
-      return;
-    }
+    if (!usuarioDb?.id_usuario) return alert("No se pudo identificar el usuario.");
+    if (!selectedSpace?.id) return alert("Selecciona un área.");
+    if (!selectedDate || !selectedTimeSlot) return alert("Selecciona fecha y horario.");
+    if (!reservationForm.purpose?.trim()) return alert("Ingresa el motivo.");
 
     const parsed = parseSlotToISO(selectedDate, selectedTimeSlot);
-    if (!parsed) {
-      alert("Horario inválido. Selecciona un horario sugerido o usa el personalizado.");
-      return;
-    }
-    if (new Date(parsed.endISO) <= new Date(parsed.startISO)) {
-      alert("La hora de fin debe ser mayor a la hora de inicio.");
-      return;
-    }
+    if (!parsed) return alert("Horario inválido.");
+    if (new Date(parsed.endISO) <= new Date(parsed.startISO))
+      return alert("La hora fin debe ser mayor.");
 
     const payload = {
       id_area: selectedSpace.id,
@@ -561,14 +563,13 @@ export default function ReservationsPage() {
       console.error("Error creando reserva:", error);
       const msg = (error.message || "").toLowerCase();
       if (msg.includes("reservas_no_overlap") || msg.includes("exclude")) {
-        alert("Ese horario ya está reservado para esa área. Elige otro horario.");
+        alert("Ese horario ya está reservado. Elige otro.");
         return;
       }
-      alert("No se pudo crear la reserva. Revisa permisos/políticas y vuelve a intentar.");
+      alert("No se pudo crear la reserva.");
       return;
     }
 
-    // cargo (opcional)
     let cargoValor = null;
     let cargoId = null;
     try {
@@ -631,7 +632,7 @@ export default function ReservationsPage() {
     const r = reservations.find((x) => x.id === reservationId);
     if (!r?._raw?.id) return;
 
-    if (!window.confirm("¿Estás seguro de que deseas cancelar esta reserva?")) return;
+    if (!window.confirm("¿Cancelar esta reserva?")) return;
 
     const { error } = await supabase
       .from("reservas")
@@ -640,14 +641,14 @@ export default function ReservationsPage() {
 
     if (error) {
       console.error("Error cancelando reserva:", error);
-      alert("No se pudo cancelar la reserva.");
+      alert("No se pudo cancelar.");
       return;
     }
 
     setReservations((prev) =>
       prev.map((x) => (x.id === reservationId ? { ...x, status: "cancelled" } : x))
     );
-    alert("Reserva cancelada exitosamente");
+    alert("Reserva cancelada");
   };
 
   /* =========================================================
