@@ -18,6 +18,7 @@ import {
   Car,
   Gamepad2,
   BookOpen,
+  Image as ImageIcon,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -37,6 +38,13 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 
 import ReservationFormModal from "@/components/ReservationFormModal";
+
+/* =========================================================
+   CONFIG (AJUSTA ESTO)
+========================================================= */
+const AREAS_BUCKET = "areas"; // 👈 cambia por tu bucket real
+const FOTOS_TABLE = "areas_fotos"; // 👈 cambia si tu tabla se llama distinto
+const SIGNED_URL_TTL = 60 * 30; // 30 minutos
 
 /* =========================================================
    Helpers de fecha/hor
@@ -123,6 +131,61 @@ function iconForAreaName(nombre) {
 }
 
 /* =========================================================
+   Precio UI
+========================================================= */
+function money(v) {
+  return `$${Number(v || 0).toLocaleString("es-CO")}`;
+}
+
+function pricingLabel(areaRow) {
+  const t = (areaRow?.pricing_type || "hora").toLowerCase();
+
+  if (t === "fijo") {
+    const fijo = Number(areaRow?.valor_fijo || 0);
+    const maxH = Number(areaRow?.max_horas_fijo || 0);
+
+    if (fijo <= 0) return { main: "Gratuito", sub: maxH > 0 ? `Fijo · hasta ${maxH}h` : "Fijo" };
+
+    return {
+      main: money(fijo),
+      sub: maxH > 0 ? `Fijo · hasta ${maxH}h` : "Precio fijo",
+    };
+  }
+
+  // por hora (default)
+  const vh = Number(areaRow?.valor_hora || 0);
+  if (vh <= 0) return { main: "Gratuito", sub: "Por hora" };
+
+  return { main: `${money(vh)}/hora`, sub: "Por hora" };
+}
+
+/* =========================================================
+   Storage URL helpers (funciona con bucket privado o público)
+========================================================= */
+function getPublicUrl(path) {
+  if (!path) return null;
+  try {
+    const { data } = supabase.storage.from(AREAS_BUCKET).getPublicUrl(path);
+    return data?.publicUrl || null;
+  } catch {
+    return null;
+  }
+}
+
+async function getSignedUrl(path) {
+  if (!path) return null;
+  try {
+    const { data, error } = await supabase.storage
+      .from(AREAS_BUCKET)
+      .createSignedUrl(path, SIGNED_URL_TTL);
+    if (error) return null;
+    return data?.signedUrl || null;
+  } catch {
+    return null;
+  }
+}
+
+/* =========================================================
    Componente
 ========================================================= */
 export default function ReservationsPage() {
@@ -150,6 +213,9 @@ export default function ReservationsPage() {
   const [customEndTime, setCustomEndTime] = useState("");
   const [savingReservation, setSavingReservation] = useState(false);
 
+  // cache simple para signed urls (evita pegarle al storage por cada render)
+  const [signedCache, setSignedCache] = useState(() => new Map());
+
   const [reservationForm, setReservationForm] = useState({
     guests: "",
     purpose: "",
@@ -166,6 +232,25 @@ export default function ReservationsPage() {
       router.replace(path);
     }, [path, router]);
     return null;
+  }
+
+  async function ensureSignedUrl(path) {
+    if (!path) return null;
+    const key = String(path);
+
+    if (signedCache.has(key)) return signedCache.get(key);
+
+    // intentamos público primero
+    const pub = getPublicUrl(path);
+    if (pub) {
+      setSignedCache((prev) => new Map(prev).set(key, pub));
+      return pub;
+    }
+
+    // si no, firmamos
+    const signed = await getSignedUrl(path);
+    if (signed) setSignedCache((prev) => new Map(prev).set(key, signed));
+    return signed;
   }
 
   /* =========================================================
@@ -215,10 +300,10 @@ export default function ReservationsPage() {
       }
       setPerfilDb(perfil);
 
-      // áreas
+      // áreas (con pricing nuevo)
       const { data: areas, error: errAreas } = await supabase
         .from("areas")
-        .select("id, idunidad, nombre, valor_hora, estado, created_at")
+        .select("id, idunidad, nombre, estado, created_at, pricing_type, valor_hora, valor_fijo, max_horas_fijo")
         .eq("idunidad", perfil.id_unidad)
         .eq("estado", "activa")
         .order("id", { ascending: true });
@@ -227,9 +312,38 @@ export default function ReservationsPage() {
         console.error("Error cargando áreas:", errAreas);
         setSpaces([]);
       } else {
-        setSpaces(
-          (areas || []).map((a) => {
+        const areaIds = (areas || []).map((a) => a.id);
+
+        // fotos (máx 6 por área) — NO usamos join para evitar líos de FK/nombres
+        let fotosByArea = new Map();
+        if (areaIds.length > 0) {
+          const { data: fotos, error: errFotos } = await supabase
+            .from(FOTOS_TABLE)
+            .select("id, area_id, path, orden, created_at")
+            .in("area_id", areaIds)
+            .order("orden", { ascending: true });
+
+          if (errFotos) {
+            console.warn("No se pudieron cargar fotos:", errFotos);
+          } else {
+            for (const f of fotos || []) {
+              const k = String(f.area_id);
+              if (!fotosByArea.has(k)) fotosByArea.set(k, []);
+              fotosByArea.get(k).push(f);
+            }
+          }
+        }
+
+        const mapped = await Promise.all(
+          (areas || []).map(async (a) => {
             const Icon = iconForAreaName(a.nombre);
+
+            const fotos = (fotosByArea.get(String(a.id)) || []).slice(0, 6);
+            const heroPath = fotos?.[0]?.path || null;
+            const heroUrl = heroPath ? await ensureSignedUrl(heroPath) : null;
+
+            const price = pricingLabel(a);
+
             return {
               id: a.id,
               name: a.nombre,
@@ -237,11 +351,27 @@ export default function ReservationsPage() {
               description: "Reserva por horario según disponibilidad",
               capacity: "Consultar",
               hours: "Según disponibilidad",
-              price:
-                a.valor_hora > 0
-                  ? `$${a.valor_hora.toLocaleString("es-CO")}/hora`
-                  : "Gratuito",
-              valor_hora: a.valor_hora,
+
+              // pricing nuevo
+              pricing_type: a.pricing_type || "hora",
+              valor_hora: a.valor_hora ?? 0,
+              valor_fijo: a.valor_fijo ?? 0,
+              max_horas_fijo: a.max_horas_fijo ?? null,
+              price: price.main,
+              priceSub: price.sub,
+
+              // imágenes
+              heroImage: heroUrl,
+              photos: await Promise.all(
+                fotos.map(async (f) => ({
+                  id: f.id,
+                  area_id: f.area_id,
+                  path: f.path,
+                  orden: f.orden ?? 0,
+                  url: await ensureSignedUrl(f.path),
+                }))
+              ),
+
               color: "from-[#7b2ae6] to-[#f9b009]",
               timeSlots: [
                 "6:00 AM - 8:00 AM",
@@ -256,6 +386,8 @@ export default function ReservationsPage() {
             };
           })
         );
+
+        setSpaces(mapped);
       }
       setLoadingSpaces(false);
 
@@ -355,7 +487,7 @@ export default function ReservationsPage() {
      Selección de área
   ========================================================= */
   const handleSpaceSelect = (space) => {
-    setSelectedSpace(space);
+    setSelectedSpace(space); // 👈 ahora trae heroImage + photos + pricing
     setShowReservationForm(true);
     setSelectedDate("");
     setSelectedTimeSlot("");
@@ -672,7 +804,6 @@ export default function ReservationsPage() {
       <SignedIn>
         <div className="min-h-screen text-foreground">
           <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-            {/* CONTENEDOR ÚNICO */}
             <div className="rounded-3xl border border-black/10 dark:border-white/10 bg-white/85 dark:bg-black/55 backdrop-blur-xl shadow-[0_25px_80px_rgba(0,0,0,0.55)] p-6 sm:p-8">
               {/* Header */}
               <div className="mb-8">
@@ -707,39 +838,60 @@ export default function ReservationsPage() {
                     {spaces.map((space) => (
                       <Card
                         key={space.id}
-                        className="shadow-lg border border-black/10 dark:border-white/10 bg-white dark:bg-black hover:shadow-xl transition-all duration-300 hover:scale-[1.02] cursor-pointer"
+                        className="overflow-hidden shadow-lg border border-black/10 dark:border-white/10 bg-white dark:bg-black hover:shadow-xl transition-all duration-300 hover:scale-[1.02] cursor-pointer"
                         onClick={() => handleSpaceSelect(space)}
                       >
+                        {/* HERO IMAGE */}
+                        <div className="relative aspect-[16/10] bg-black/5 dark:bg-white/5">
+                          {space.heroImage ? (
+                            <img
+                              src={space.heroImage}
+                              alt={space.name}
+                              className="h-full w-full object-cover"
+                              loading="lazy"
+                            />
+                          ) : (
+                            <div className="h-full w-full flex items-center justify-center">
+                              <div
+                                className={`h-14 w-14 rounded-2xl bg-gradient-to-br ${space.color} flex items-center justify-center shadow-lg`}
+                              >
+                                <ImageIcon className="h-6 w-6 text-white" />
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="absolute left-3 top-3 rounded-full bg-black/55 text-white text-[11px] px-3 py-1 backdrop-blur">
+                            {space.price}
+                          </div>
+                        </div>
+
                         <CardContent className="p-6">
                           <div className="space-y-4">
-                            <div
-                              className={`w-16 h-16 bg-gradient-to-br ${space.color} rounded-xl flex items-center justify-center shadow-lg`}
-                            >
-                              <space.icon className="h-8 w-8 text-white" />
+                            <div className="flex items-start gap-3">
+                              <div
+                                className={`w-12 h-12 bg-gradient-to-br ${space.color} rounded-xl flex items-center justify-center shadow-lg flex-shrink-0`}
+                              >
+                                <space.icon className="h-6 w-6 text-white" />
+                              </div>
+
+                              <div className="min-w-0">
+                                <h3 className="text-lg font-semibold text-slate-900 dark:text-white truncate">
+                                  {space.name}
+                                </h3>
+                                <p className="text-xs text-slate-500 dark:text-slate-300 mt-0.5">
+                                  {space.priceSub || " "}
+                                </p>
+                              </div>
                             </div>
 
-                            <div>
-                              <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-2">
-                                {space.name}
-                              </h3>
-                              <p className="text-sm text-slate-600 dark:text-slate-300 mb-3">
-                                {space.description}
-                              </p>
-
-                              <div className="space-y-2 text-xs text-slate-500 dark:text-slate-300">
-                                <div className="flex items-center space-x-2">
-                                  <Users className="h-3 w-3" />
-                                  <span>{space.capacity}</span>
-                                </div>
-                                <div className="flex items-center space-x-2">
-                                  <Clock className="h-3 w-3" />
-                                  <span>{space.hours}</span>
-                                </div>
-                                <div className="flex items-center space-x-2">
-                                  <span className="font-medium text-green-600">
-                                    {space.price}
-                                  </span>
-                                </div>
+                            <div className="space-y-2 text-xs text-slate-500 dark:text-slate-300">
+                              <div className="flex items-center space-x-2">
+                                <Users className="h-3 w-3" />
+                                <span>{space.capacity}</span>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <Clock className="h-3 w-3" />
+                                <span>{space.hours}</span>
                               </div>
                             </div>
 
@@ -760,7 +912,7 @@ export default function ReservationsPage() {
               {/* Modal */}
               <ReservationFormModal
                 open={showReservationForm}
-                selectedSpace={selectedSpace}
+                selectedSpace={selectedSpace} // 👈 ya incluye photos + pricing
                 selectedDate={selectedDate}
                 setSelectedDate={setSelectedDate}
                 selectedTimeSlot={selectedTimeSlot}
@@ -781,7 +933,7 @@ export default function ReservationsPage() {
                 onClose={closeModal}
               />
 
-              {/* Mis Reservas */}
+              {/* Mis Reservas (igual que antes) */}
               <div className="space-y-6">
                 <div className="flex flex-col sm:flex-row gap-4 mb-6">
                   <div className="flex-1 relative">
@@ -885,9 +1037,7 @@ export default function ReservationsPage() {
                                     <div className="flex items-center space-x-2">
                                       <Calendar className="h-4 w-4 text-slate-400" />
                                       <span>
-                                        {new Date(
-                                          reservation.date + "T00:00:00"
-                                        ).toLocaleDateString("es-CO")}
+                                        {new Date(reservation.date + "T00:00:00").toLocaleDateString("es-CO")}
                                       </span>
                                     </div>
                                     <div className="flex items-center space-x-2">
@@ -904,10 +1054,7 @@ export default function ReservationsPage() {
                                     <p className="text-xs text-slate-600 dark:text-slate-300">
                                       Cargo:{" "}
                                       <span className="font-semibold">
-                                        $
-                                        {Number(reservation._cargoValor).toLocaleString(
-                                          "es-CO"
-                                        )}
+                                        ${Number(reservation._cargoValor).toLocaleString("es-CO")}
                                       </span>{" "}
                                       ({reservation._cargoEstado || "pendiente"})
                                     </p>
@@ -916,17 +1063,14 @@ export default function ReservationsPage() {
                                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                                     Solicitada el{" "}
                                     {reservation.createdDate
-                                      ? new Date(
-                                          reservation.createdDate + "T00:00:00"
-                                        ).toLocaleDateString("es-CO")
+                                      ? new Date(reservation.createdDate + "T00:00:00").toLocaleDateString("es-CO")
                                       : ""}
                                   </p>
                                 </div>
                               </div>
 
                               <div className="flex flex-col gap-2 items-end">
-                                {(reservation.status === "pending" ||
-                                  reservation.status === "confirmed") && (
+                                {(reservation.status === "pending" || reservation.status === "confirmed") && (
                                   <Button
                                     size="sm"
                                     variant="outline"

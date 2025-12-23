@@ -1,6 +1,14 @@
 "use client";
 
-import { ChevronLeft, ChevronRight, Clock, X, CheckCircle } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+  X,
+  CheckCircle,
+  Image as ImageIcon,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -34,22 +42,45 @@ export default function ReservationFormModal({
 
   const GRAD = "from-[#7b2ae6] to-[#f9b009]";
 
+  /* =========================================================
+     Galería (máx 6)
+  ========================================================= */
+  const photos = useMemo(() => {
+    const list = Array.isArray(selectedSpace?.photos) ? selectedSpace.photos : [];
+    const urls = list
+      .map((p) => p?.url)
+      .filter(Boolean)
+      .slice(0, 6);
+
+    // si no vienen photos pero sí heroImage:
+    if (urls.length === 0 && selectedSpace?.heroImage) return [selectedSpace.heroImage];
+
+    return urls;
+  }, [selectedSpace]);
+
+  const [imgIndex, setImgIndex] = useState(0);
+
+  useEffect(() => {
+    setImgIndex(0); // cuando cambias de espacio, reinicia la imagen
+  }, [selectedSpace?.id]);
+
+  const hasPhotos = photos.length > 0;
+  const canNav = photos.length > 1;
+
+  const prevImg = () => setImgIndex((i) => (i - 1 + photos.length) % photos.length);
+  const nextImg = () => setImgIndex((i) => (i + 1) % photos.length);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/55 backdrop-blur-sm">
-      {/* ✅ Quitamos overflow del Card para evitar doble scroll.
-          El scroll lo maneja SOLO CardContent. */}
       <Card className="w-full max-w-4xl border border-black/10 dark:border-white/10 bg-white/95 dark:bg-black/80 backdrop-blur-xl shadow-[0_25px_80px_rgba(0,0,0,0.65)]">
-        {/* ✅ Header más bajito */}
+        {/* Header */}
         <CardHeader className="py-3 sm:py-4 px-4 sm:px-6 border-b border-black/10 dark:border-white/10">
           <div className="flex items-center justify-between gap-3">
             <CardTitle className="flex items-center gap-2 text-base sm:text-lg font-semibold">
-              <span
-                className={`bg-gradient-to-r ${GRAD} bg-clip-text text-transparent`}
-              >
+              <span className={`bg-gradient-to-r ${GRAD} bg-clip-text text-transparent`}>
                 Reservar {selectedSpace.name}
               </span>
 
-              {/* Icono con gradient (fondo) */}
               <span
                 className={`ml-1 inline-flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br ${GRAD} shadow`}
               >
@@ -68,8 +99,78 @@ export default function ReservationFormModal({
           </div>
         </CardHeader>
 
-        {/* ✅ Un solo scroll aquí */}
+        {/* Scroll único */}
         <CardContent className="p-4 sm:p-6 max-h-[78vh] overflow-y-auto">
+          {/* ✅ GALERÍA */}
+          <div className="mb-5">
+            <div className="relative overflow-hidden rounded-2xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 aspect-[16/9]">
+              {hasPhotos ? (
+                <img
+                  src={photos[imgIndex]}
+                  alt={`Foto ${imgIndex + 1} - ${selectedSpace.name}`}
+                  className="h-full w-full object-cover"
+                  loading="lazy"
+                />
+              ) : (
+                <div className="h-full w-full flex flex-col items-center justify-center text-muted-foreground">
+                  <div className={`h-14 w-14 rounded-2xl bg-gradient-to-br ${GRAD} flex items-center justify-center shadow-lg mb-3`}>
+                    <ImageIcon className="h-7 w-7 text-white" />
+                  </div>
+                  <p className="text-sm">Este espacio aún no tiene fotos</p>
+                </div>
+              )}
+
+              {/* Flechas */}
+              {canNav && (
+                <>
+                  <button
+                    type="button"
+                    onClick={prevImg}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 h-10 w-10 rounded-full bg-black/55 text-white backdrop-blur flex items-center justify-center hover:bg-black/70 transition"
+                    aria-label="Anterior"
+                  >
+                    <ChevronLeft className="h-5 w-5" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={nextImg}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 h-10 w-10 rounded-full bg-black/55 text-white backdrop-blur flex items-center justify-center hover:bg-black/70 transition"
+                    aria-label="Siguiente"
+                  >
+                    <ChevronRight className="h-5 w-5" />
+                  </button>
+
+                  <div className="absolute bottom-3 left-1/2 -translate-x-1/2 text-[11px] px-3 py-1 rounded-full bg-black/55 text-white backdrop-blur">
+                    {imgIndex + 1}/{photos.length}
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Thumbnails */}
+            {photos.length > 1 && (
+              <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+                {photos.slice(0, 6).map((url, idx) => (
+                  <button
+                    key={`${url}-${idx}`}
+                    type="button"
+                    onClick={() => setImgIndex(idx)}
+                    className={`relative h-16 w-24 flex-shrink-0 overflow-hidden rounded-xl border transition ${
+                      idx === imgIndex
+                        ? "border-purple-400/70 ring-2 ring-purple-400/30"
+                        : "border-black/10 dark:border-white/10 hover:border-purple-400/40"
+                    }`}
+                    aria-label={`Ver foto ${idx + 1}`}
+                  >
+                    <img src={url} alt={`Miniatura ${idx + 1}`} className="h-full w-full object-cover" />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Form */}
           <form onSubmit={onSubmit} className="space-y-5">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Calendar */}
@@ -87,10 +188,7 @@ export default function ReservationFormModal({
                       className="h-8 w-8"
                       onClick={() =>
                         setCurrentMonth(
-                          new Date(
-                            currentMonth.getFullYear(),
-                            currentMonth.getMonth() - 1
-                          )
+                          new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1)
                         )
                       }
                     >
@@ -98,10 +196,7 @@ export default function ReservationFormModal({
                     </Button>
 
                     <h4 className="text-sm font-semibold text-foreground">
-                      {currentMonth.toLocaleDateString("es-CO", {
-                        month: "long",
-                        year: "numeric",
-                      })}
+                      {currentMonth.toLocaleDateString("es-CO", { month: "long", year: "numeric" })}
                     </h4>
 
                     <Button
@@ -111,10 +206,7 @@ export default function ReservationFormModal({
                       className="h-8 w-8"
                       onClick={() =>
                         setCurrentMonth(
-                          new Date(
-                            currentMonth.getFullYear(),
-                            currentMonth.getMonth() + 1
-                          )
+                          new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1)
                         )
                       }
                     >
@@ -123,16 +215,14 @@ export default function ReservationFormModal({
                   </div>
 
                   <div className="grid grid-cols-7 gap-1 mb-2">
-                    {["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"].map(
-                      (day) => (
-                        <div
-                          key={day}
-                          className="h-7 flex items-center justify-center text-[11px] font-medium text-muted-foreground"
-                        >
-                          {day}
-                        </div>
-                      )
-                    )}
+                    {["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"].map((day) => (
+                      <div
+                        key={day}
+                        className="h-7 flex items-center justify-center text-[11px] font-medium text-muted-foreground"
+                      >
+                        {day}
+                      </div>
+                    ))}
                   </div>
 
                   <div className="grid grid-cols-7 gap-1">{renderCalendar()}</div>
@@ -141,18 +231,13 @@ export default function ReservationFormModal({
                 {selectedDate && (
                   <div className="rounded-xl border border-black/10 dark:border-white/10 bg-white/60 dark:bg-white/5 p-3">
                     <p className="text-xs sm:text-sm font-medium text-foreground">
-                      <span className="text-muted-foreground">
-                        Fecha seleccionada:
-                      </span>{" "}
-                      {new Date(selectedDate + "T00:00:00").toLocaleDateString(
-                        "es-CO",
-                        {
-                          weekday: "long",
-                          year: "numeric",
-                          month: "long",
-                          day: "numeric",
-                        }
-                      )}
+                      <span className="text-muted-foreground">Fecha seleccionada:</span>{" "}
+                      {new Date(selectedDate + "T00:00:00").toLocaleDateString("es-CO", {
+                        weekday: "long",
+                        year: "numeric",
+                        month: "long",
+                        day: "numeric",
+                      })}
                     </p>
                   </div>
                 )}
@@ -200,10 +285,7 @@ export default function ReservationFormModal({
 
                       <div className="grid grid-cols-2 gap-3">
                         <div className="space-y-1">
-                          <Label
-                            htmlFor="startTime"
-                            className="text-[11px] text-muted-foreground"
-                          >
+                          <Label htmlFor="startTime" className="text-[11px] text-muted-foreground">
                             Hora inicio
                           </Label>
                           <Input
@@ -216,10 +298,7 @@ export default function ReservationFormModal({
                         </div>
 
                         <div className="space-y-1">
-                          <Label
-                            htmlFor="endTime"
-                            className="text-[11px] text-muted-foreground"
-                          >
+                          <Label htmlFor="endTime" className="text-[11px] text-muted-foreground">
                             Hora fin
                           </Label>
                           <Input
@@ -237,11 +316,7 @@ export default function ReservationFormModal({
                           type="button"
                           variant="outline"
                           size="sm"
-                          onClick={() =>
-                            setSelectedTimeSlot(
-                              `${customStartTime} - ${customEndTime}`
-                            )
-                          }
+                          onClick={() => setSelectedTimeSlot(`${customStartTime} - ${customEndTime}`)}
                           className="w-full text-xs border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 hover:bg-white/85 dark:hover:bg-white/10"
                         >
                           Usar: {customStartTime} - {customEndTime}
@@ -265,10 +340,7 @@ export default function ReservationFormModal({
                           1,
                           Math.min(500, parseInt(e.target.value || "1", 10))
                         );
-                        setReservationForm((prev) => ({
-                          ...prev,
-                          guests: value.toString(),
-                        }));
+                        setReservationForm((prev) => ({ ...prev, guests: value.toString() }));
                       }}
                       placeholder="Ej: 10"
                       min="1"
@@ -283,12 +355,7 @@ export default function ReservationFormModal({
                     <Input
                       id="purpose"
                       value={reservationForm.purpose}
-                      onChange={(e) =>
-                        setReservationForm((prev) => ({
-                          ...prev,
-                          purpose: e.target.value,
-                        }))
-                      }
+                      onChange={(e) => setReservationForm((prev) => ({ ...prev, purpose: e.target.value }))}
                       required
                       placeholder="Ej: Cumpleaños, Reunión familiar"
                       className="h-9 bg-white/70 dark:bg-white/5 border-black/10 dark:border-white/10"
@@ -302,12 +369,7 @@ export default function ReservationFormModal({
                     <Textarea
                       id="notes"
                       value={reservationForm.notes}
-                      onChange={(e) =>
-                        setReservationForm((prev) => ({
-                          ...prev,
-                          notes: e.target.value,
-                        }))
-                      }
+                      onChange={(e) => setReservationForm((prev) => ({ ...prev, notes: e.target.value }))}
                       placeholder="Información adicional..."
                       rows={3}
                       className="bg-white/70 dark:bg-white/5 border-black/10 dark:border-white/10"
@@ -319,37 +381,25 @@ export default function ReservationFormModal({
 
             {/* Resumen */}
             <div className="rounded-xl border border-black/10 dark:border-white/10 bg-white/60 dark:bg-white/5 p-4">
-              <h4 className="text-sm font-semibold text-foreground mb-2">
-                Resumen de reserva
-              </h4>
+              <h4 className="text-sm font-semibold text-foreground mb-2">Resumen de reserva</h4>
               <div className="space-y-1 text-xs sm:text-sm text-foreground/90">
                 <p>
-                  <span className="text-muted-foreground font-medium">
-                    Solicitante:
-                  </span>{" "}
+                  <span className="text-muted-foreground font-medium">Solicitante:</span>{" "}
                   {userName}
                 </p>
                 <p>
-                  <span className="text-muted-foreground font-medium">
-                    Espacio:
-                  </span>{" "}
+                  <span className="text-muted-foreground font-medium">Espacio:</span>{" "}
                   {selectedSpace.name}
                 </p>
                 {selectedDate && (
                   <p>
-                    <span className="text-muted-foreground font-medium">
-                      Fecha:
-                    </span>{" "}
-                    {new Date(selectedDate + "T00:00:00").toLocaleDateString(
-                      "es-CO"
-                    )}
+                    <span className="text-muted-foreground font-medium">Fecha:</span>{" "}
+                    {new Date(selectedDate + "T00:00:00").toLocaleDateString("es-CO")}
                   </p>
                 )}
                 {selectedTimeSlot && (
                   <p>
-                    <span className="text-muted-foreground font-medium">
-                      Horario:
-                    </span>{" "}
+                    <span className="text-muted-foreground font-medium">Horario:</span>{" "}
                     {selectedTimeSlot}
                   </p>
                 )}
