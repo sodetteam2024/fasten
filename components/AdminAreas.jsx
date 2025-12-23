@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { useUser } from "@clerk/nextjs";
 import { supabase } from "@/lib/supabaseClient";
 import { Plus, Save, Image as ImageIcon, Trash2, Loader2, RefreshCw } from "lucide-react";
@@ -8,12 +8,8 @@ import CreateAreaModal from "@/components/CreateAreaModal";
 
 const AREAS_BUCKET = "areas";
 const MAX_PHOTOS = 6;
-
-// Si tu bucket es privado, esto expira -> por eso hacemos auto-refresh.
 const SIGNED_URL_TTL = 60 * 60; // 1 hora
-
-// Refrescamos URLs antes de que expire (ej: cada 45 min)
-const AUTO_REFRESH_MS = 45 * 60 * 1000;
+const AUTO_REFRESH_MS = 45 * 60 * 1000; // 45 min
 
 function money(v) {
   return `$${Number(v || 0).toLocaleString("es-CO")}`;
@@ -24,15 +20,8 @@ function safeInt(v) {
   return Number.isFinite(n) ? n : 0;
 }
 
-/**
- * Resuelve una URL para mostrar una imagen del bucket.
- * - Si es http(s) la devuelve
- * - Intenta signedUrl
- * - Fallback a publicUrl
- */
 async function resolveStorageUrl(path) {
   if (!path) return "";
-
   if (path.startsWith("http://") || path.startsWith("https://")) return path;
 
   const { data: signed, error: errSigned } = await supabase.storage
@@ -45,7 +34,6 @@ async function resolveStorageUrl(path) {
   return pub?.publicUrl || "";
 }
 
-// Insert DB por API (bypass RLS)
 async function insertAreaPhotoViaApi({ id_area, path, orden }) {
   const res = await fetch("/api/areas-photos", {
     method: "POST",
@@ -55,7 +43,7 @@ async function insertAreaPhotoViaApi({ id_area, path, orden }) {
 
   const json = await res.json();
   if (!res.ok) throw new Error(json?.error || "Error insertando en DB");
-  return json.row; // { id, id_area, path, orden }
+  return json.row;
 }
 
 export default function AdminAreas() {
@@ -74,23 +62,26 @@ export default function AdminAreas() {
   const [creating, setCreating] = useState(false);
 
   const [photos, setPhotos] = useState([]);
-  const [uploading, setUploading] = useState(false);
+  const photosRef = useRef([]);
+  useEffect(() => {
+    photosRef.current = photos;
+  }, [photos]);
 
+  const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef(null);
 
   const [showCreateModal, setShowCreateModal] = useState(false);
 
   const canAdmin = roleId === 1 || roleId === 2;
 
-  // Mapa en memoria para evitar re-firmar lo mismo mil veces (en AdminAreas)
   const urlCacheRef = useRef(new Map());
 
   const cachedResolve = useCallback(async (path) => {
     if (!path) return "";
     const key = String(path);
-
     const cache = urlCacheRef.current;
-    if (cache.has(key)) return cache.get(key);
+
+    if (cache.has(key)) return cache.get(key) || "";
 
     const url = await resolveStorageUrl(key);
     if (url) cache.set(key, url);
@@ -111,9 +102,8 @@ export default function AdminAreas() {
     });
   }, []);
 
-  // ======== Cargar fotos del área + firmar urls (si aplica) =========
   const loadAreaPhotos = useCallback(
-    async (areaId) => {
+    async (areaId, opts = {}) => {
       if (!areaId) {
         setPhotos([]);
         return;
@@ -131,9 +121,19 @@ export default function AdminAreas() {
         return;
       }
 
+      const list = (data || []).slice(0, MAX_PHOTOS);
+
+      // ✅ Forzar refresh: limpiar cache de esos paths
+      if (opts.bypassCache) {
+        for (const p of list) {
+          if (p?.path) urlCacheRef.current.delete(String(p.path));
+        }
+      }
+
       const mapped = await Promise.all(
-        (data || []).slice(0, MAX_PHOTOS).map(async (p) => {
-          const url = await cachedResolve(p.path);
+        list.map(async (p) => {
+          const url = opts.bypassCache ? await resolveStorageUrl(p.path) : await cachedResolve(p.path);
+          if (url) urlCacheRef.current.set(String(p.path), url);
           return { ...p, url, pending: false };
         })
       );
@@ -143,13 +143,10 @@ export default function AdminAreas() {
     [cachedResolve]
   );
 
-  // ======== SELECT AREA =========
   const selectArea = useCallback(
     async (area) => {
       if (!area?.id) return;
       hydrateForm(area);
-      // IMPORTANTE: limpia cache SOLO si quieres forzar refresh total al cambiar de área.
-      // Yo no lo limpio para que sea más rápido; igual hay auto-refresh.
       await loadAreaPhotos(area.id);
     },
     [hydrateForm, loadAreaPhotos]
@@ -200,14 +197,12 @@ export default function AdminAreas() {
       setAreas(a || []);
       setLoading(false);
 
-      // Mantener el seleccionado si sigue existiendo, si no, el primero.
       const currentId = selected?.id;
       const keep = (a || []).find((x) => String(x.id) === String(currentId));
-      if (keep) {
-        await selectArea(keep);
-      } else if ((a || []).length > 0) {
-        await selectArea(a[0]);
-      } else {
+
+      if (keep) await selectArea(keep);
+      else if ((a || []).length > 0) await selectArea(a[0]);
+      else {
         setSelected(null);
         setForm(null);
         setPhotos([]);
@@ -218,26 +213,27 @@ export default function AdminAreas() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
-  // ======== Auto-refresh de URLs firmadas mientras estás en un área (evita “se borran”) ========
+  // ✅ AUTO-REFRESH: usa photosRef para no usar "photos viejo"
   useEffect(() => {
     if (!selected?.id) return;
 
     const t = setInterval(async () => {
-      // refresca urls de las fotos actuales
-      setPhotos((prev) => prev.map((p) => ({ ...p }))); // no-op para mantener UI consistente
-      const fresh = await Promise.all(
-        (photos || []).map(async (p) => {
+      const current = photosRef.current || [];
+      if (!current.length) return;
+
+      const refreshed = await Promise.all(
+        current.map(async (p) => {
           if (!p?.path) return p;
           const url = await resolveStorageUrl(p.path);
           if (url) urlCacheRef.current.set(String(p.path), url);
           return { ...p, url: url || p.url };
         })
       );
-      setPhotos(fresh);
+
+      setPhotos(refreshed);
     }, AUTO_REFRESH_MS);
 
     return () => clearInterval(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected?.id]);
 
   // ========= CREATE AREA (desde modal) =========
@@ -305,8 +301,6 @@ export default function AdminAreas() {
     }
 
     setAreas((prev) => prev.map((a) => (a.id === form.id ? { ...a, ...payload } : a)));
-
-    // también actualiza selected en memoria (para que no se “pierda” el estado)
     setSelected((prev) => (prev?.id === form.id ? { ...prev, ...payload } : prev));
 
     alert("Guardado ✅");
@@ -323,7 +317,6 @@ export default function AdminAreas() {
 
     const remaining = Math.max(0, MAX_PHOTOS - photos.length);
     const toUpload = files.slice(0, remaining);
-
     if (!toUpload.length) return alert("Ya tienes 6 fotos en esta galería.");
 
     const baseOrden = photos.filter((p) => !p.pending).length;
@@ -334,20 +327,11 @@ export default function AdminAreas() {
       const tempId = `temp-${Date.now()}-${index}`;
       const previewUrl = URL.createObjectURL(file);
 
-      // 1) preview inmediato
       setPhotos((prev) => [
         ...prev,
-        {
-          id: tempId,
-          id_area: selected.id,
-          path: null,
-          orden: baseOrden + index,
-          url: previewUrl,
-          pending: true,
-        },
+        { id: tempId, id_area: selected.id, path: null, orden: baseOrden + index, url: previewUrl, pending: true },
       ]);
 
-      // 2) subir + insertar DB por API
       (async () => {
         setUploading(true);
         try {
@@ -375,7 +359,6 @@ export default function AdminAreas() {
           } catch (err) {
             console.error("API insert error:", err);
             alert(`Subió al bucket pero no guardó en DB: ${err?.message || "error"}`);
-
             await supabase.storage.from(AREAS_BUCKET).remove([path]);
 
             URL.revokeObjectURL(previewUrl);
@@ -388,36 +371,21 @@ export default function AdminAreas() {
 
           URL.revokeObjectURL(previewUrl);
 
-          // reemplazar temp por real
           setPhotos((prev) =>
             prev.map((p) =>
               p.id === tempId
-                ? {
-                    ...p,
-                    id: row.id,
-                    id_area: row.id_area,
-                    path: row.path,
-                    orden: row.orden,
-                    url: signedUrl || p.url,
-                    pending: false,
-                  }
+                ? { ...p, id: row.id, id_area: row.id_area, path: row.path, orden: row.orden, url: signedUrl || p.url, pending: false }
                 : p
             )
           );
 
-          // si no hay imagen_principal, asigna la primera que subes
           const hasPrincipal = !!(form?.imagen_principal || selected?.imagen_principal);
           if (!hasPrincipal && index === 0) {
-            const { error: upAreaErr } = await supabase
-              .from("areas")
-              .update({ imagen_principal: path })
-              .eq("id", selected.id);
+            const { error: upAreaErr } = await supabase.from("areas").update({ imagen_principal: path }).eq("id", selected.id);
 
             if (!upAreaErr) {
               setForm((p) => ({ ...p, imagen_principal: path }));
-              setAreas((prev) =>
-                prev.map((a) => (a.id === selected.id ? { ...a, imagen_principal: path } : a))
-              );
+              setAreas((prev) => prev.map((a) => (a.id === selected.id ? { ...a, imagen_principal: path } : a)));
               setSelected((prev) => (prev?.id === selected.id ? { ...prev, imagen_principal: path } : prev));
             }
           }
@@ -437,11 +405,8 @@ export default function AdminAreas() {
     if (!canAdmin) return;
     if (!confirm("¿Eliminar esta foto?")) return;
 
-    // preview pending
     if (!p.path && p.url?.startsWith("blob:")) {
-      try {
-        URL.revokeObjectURL(p.url);
-      } catch {}
+      try { URL.revokeObjectURL(p.url); } catch {}
       setPhotos((prev) => prev.filter((x) => x.id !== p.id));
       return;
     }
@@ -456,19 +421,14 @@ export default function AdminAreas() {
     const { error: rmErr } = await supabase.storage.from(AREAS_BUCKET).remove([p.path]);
     if (rmErr) console.warn("No se pudo borrar del bucket:", rmErr);
 
-    // limpia cache
     if (p.path) urlCacheRef.current.delete(String(p.path));
-
     setPhotos((prev) => prev.filter((x) => x.id !== p.id));
 
-    // si era principal, borrar
     if (form?.imagen_principal === p.path) {
       const { error } = await supabase.from("areas").update({ imagen_principal: null }).eq("id", selected.id);
       if (!error) {
         setForm((x) => ({ ...x, imagen_principal: null }));
-        setAreas((prev) =>
-          prev.map((a) => (a.id === selected.id ? { ...a, imagen_principal: null } : a))
-        );
+        setAreas((prev) => prev.map((a) => (a.id === selected.id ? { ...a, imagen_principal: null } : a)));
         setSelected((prev) => (prev?.id === selected.id ? { ...prev, imagen_principal: null } : prev));
       }
     }
@@ -476,7 +436,7 @@ export default function AdminAreas() {
 
   const refreshImagesNow = async () => {
     if (!selected?.id) return;
-    await loadAreaPhotos(selected.id);
+    await loadAreaPhotos(selected.id, { bypassCache: true });
   };
 
   if (!canAdmin) {
@@ -494,6 +454,7 @@ export default function AdminAreas() {
         open={showCreateModal}
         onClose={() => setShowCreateModal(false)}
         onCreate={createArea}
+        creating={creating}
       />
 
       <section className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -505,17 +466,15 @@ export default function AdminAreas() {
               <p className="text-xs text-muted-foreground">Configura precio y fotos.</p>
             </div>
 
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setShowCreateModal(true)}
-                className="inline-flex items-center gap-2 rounded-xl bg-purple-600 text-white px-3 py-2 text-xs font-semibold hover:bg-purple-700 transition disabled:opacity-70"
-                disabled={creating}
-              >
-                {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-                Nueva área
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => setShowCreateModal(true)}
+              className="inline-flex items-center gap-2 rounded-xl bg-purple-600 text-white px-3 py-2 text-xs font-semibold hover:bg-purple-700 transition disabled:opacity-70"
+              disabled={creating}
+            >
+              {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+              Nueva área
+            </button>
           </div>
 
           {loading ? (
@@ -694,17 +653,12 @@ export default function AdminAreas() {
                             className="h-full w-full object-cover"
                             draggable={false}
                             onError={async (e) => {
-                              // ✅ si expira signed url, la refrescamos y reemplazamos
                               if (!p?.path) return;
                               const fresh = await resolveStorageUrl(p.path);
                               if (fresh) {
                                 urlCacheRef.current.set(String(p.path), fresh);
                                 e.currentTarget.src = fresh;
-                                setPhotos((prev) =>
-                                  prev.map((x) => (x.id === p.id ? { ...x, url: fresh } : x))
-                                );
-                              } else {
-                                console.warn("No pudo refrescar URL para:", p.path);
+                                setPhotos((prev) => prev.map((x) => (x.id === p.id ? { ...x, url: fresh } : x)));
                               }
                             }}
                           />
@@ -717,9 +671,7 @@ export default function AdminAreas() {
                         )}
 
                         <div className="flex items-center justify-between p-2">
-                          <span className="text-[11px] text-muted-foreground truncate">
-                            {p.path || "pendiente..."}
-                          </span>
+                          <span className="text-[11px] text-muted-foreground truncate">{p.path || "pendiente..."}</span>
                           <button
                             type="button"
                             onClick={() => removePhoto(p)}

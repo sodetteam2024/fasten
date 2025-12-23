@@ -43,7 +43,6 @@ import ReservationFormModal from "@/components/ReservationFormModal";
    CONFIG
 ========================================================= */
 const AREAS_BUCKET = "areas";
-const FOTOS_TABLE = "areas_fotos";
 const SIGNED_URL_TTL = 60 * 30; // 30 minutos
 const SIGNED_SAFETY_MS = 15_000; // margen para refrescar antes de expirar
 
@@ -246,7 +245,7 @@ export default function ReservationsPage() {
     if (pub) {
       setUrlCache((prev) => {
         const next = new Map(prev);
-        next.set(key, { url: pub, expMs: Date.now() + 365 * 24 * 3600 * 1000 }); // “no expira”
+        next.set(key, { url: pub, expMs: Date.now() + 365 * 24 * 3600 * 1000 });
         return next;
       });
       return pub;
@@ -269,43 +268,25 @@ export default function ReservationsPage() {
     return null;
   }
 
+  // ✅ ahora NO hacemos query aparte a areas_fotos: las fotos vienen embebidas en el select.
   async function hydrateAreaImages(areas) {
-    const areaIds = (areas || []).map((a) => a.id);
-    const fotosByArea = new Map();
-
-    if (areaIds.length > 0) {
-      const { data: fotos, error: errFotos } = await supabase
-        .from(FOTOS_TABLE)
-        .select("id, id_area, path, orden, created_at")
-        .in("id_area", areaIds)
-        .order("orden", { ascending: true });
-
-      if (errFotos) {
-        console.warn("No se pudieron cargar fotos:", errFotos);
-      } else {
-        for (const f of fotos || []) {
-          const k = String(f.id_area);
-          if (!fotosByArea.has(k)) fotosByArea.set(k, []);
-          fotosByArea.get(k).push(f);
-        }
-      }
-    }
-
     const mapped = await Promise.all(
       (areas || []).map(async (a) => {
         const Icon = iconForAreaName(a.nombre);
         const price = pricingLabel(a);
 
-        const fotos = (fotosByArea.get(String(a.id)) || []).slice(0, 6);
+        const fotos = (a.areas_fotos || [])
+          .slice()
+          .sort((x, y) => (x.orden ?? 0) - (y.orden ?? 0))
+          .slice(0, 6);
 
-        // prioridad: imagen_principal -> primera foto
         const heroPath = a.imagen_principal || fotos?.[0]?.path || null;
         const heroImage = heroPath ? await ensureUrl(heroPath) : null;
 
         const photos = await Promise.all(
           fotos.map(async (f) => ({
             id: f.id,
-            id_area: f.id_area,
+            id_area: a.id,
             path: f.path,
             orden: f.orden ?? 0,
             url: await ensureUrl(f.path),
@@ -396,12 +377,27 @@ export default function ReservationsPage() {
       }
       setPerfilDb(perfil);
 
-      // áreas
+      // ✅ áreas + fotos en el MISMO SELECT (FIX)
       const { data: areas, error: errAreas } = await supabase
         .from("areas")
-        .select(
-          "id, idunidad, nombre, estado, created_at, pricing_type, valor_hora, valor_fijo, max_horas_fijo, imagen_principal"
-        )
+        .select(`
+          id,
+          idunidad,
+          nombre,
+          estado,
+          created_at,
+          pricing_type,
+          valor_hora,
+          valor_fijo,
+          max_horas_fijo,
+          imagen_principal,
+          areas_fotos (
+            id,
+            path,
+            orden,
+            created_at
+          )
+        `)
         .eq("idunidad", perfil.id_unidad)
         .eq("estado", "activa")
         .order("id", { ascending: true });
@@ -490,9 +486,7 @@ export default function ReservationsPage() {
           purpose: "",
           notes: "",
           reservedBy: userName,
-          createdDate: r.created_at
-            ? new Date(r.created_at).toISOString().slice(0, 10)
-            : "",
+          createdDate: r.created_at ? new Date(r.created_at).toISOString().slice(0, 10) : "",
           _raw: r,
           _cargoId: cargo?.id ?? null,
           _cargoValor: cargo?.valor ?? null,
@@ -508,7 +502,7 @@ export default function ReservationsPage() {
   }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* =========================================================
-     Selección de área (IMPORTANTÍSIMO: siempre usar el space fresco)
+     Selección de área
   ========================================================= */
   const handleSpaceSelect = (space) => {
     const fresh = spaces.find((s) => String(s.id) === String(space.id)) || space;
@@ -1044,9 +1038,7 @@ export default function ReservationsPage() {
                                     <div className="flex items-center space-x-2">
                                       <Calendar className="h-4 w-4 text-slate-400" />
                                       <span>
-                                        {new Date(
-                                          reservation.date + "T00:00:00"
-                                        ).toLocaleDateString("es-CO")}
+                                        {new Date(reservation.date + "T00:00:00").toLocaleDateString("es-CO")}
                                       </span>
                                     </div>
                                     <div className="flex items-center space-x-2">
@@ -1064,9 +1056,7 @@ export default function ReservationsPage() {
                                       Cargo:{" "}
                                       <span className="font-semibold">
                                         $
-                                        {Number(reservation._cargoValor).toLocaleString(
-                                          "es-CO"
-                                        )}
+                                        {Number(reservation._cargoValor).toLocaleString("es-CO")}
                                       </span>{" "}
                                       ({reservation._cargoEstado || "pendiente"})
                                     </p>
@@ -1075,9 +1065,7 @@ export default function ReservationsPage() {
                                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                                     Solicitada el{" "}
                                     {reservation.createdDate
-                                      ? new Date(
-                                          reservation.createdDate + "T00:00:00"
-                                        ).toLocaleDateString("es-CO")
+                                      ? new Date(reservation.createdDate + "T00:00:00").toLocaleDateString("es-CO")
                                       : ""}
                                   </p>
                                 </div>
@@ -1089,9 +1077,7 @@ export default function ReservationsPage() {
                                   <Button
                                     size="sm"
                                     variant="outline"
-                                    onClick={() =>
-                                      handleCancelReservation(reservation.id)
-                                    }
+                                    onClick={() => handleCancelReservation(reservation.id)}
                                     className="border-red-200 hover:bg-red-50 text-red-600 dark:hover:bg-red-950/30"
                                   >
                                     <XCircle className="h-4 w-4 mr-1" />
