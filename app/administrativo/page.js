@@ -29,18 +29,25 @@ export default function PanelAdministrativo() {
 
   // Submódulos activos
   const [activeUserSub, setActiveUserSub] = useState("activos"); // "activos" | "registrar" | "baneados"
-  const [activeReservaSub, setActiveReservaSub] = useState("reservas"); // "areas" | "reservas"
+  const [activeReservaSub, setActiveReservaSub] = useState("areas"); // "areas" | "reservas"
 
   // Helpers
   const toggleGroup = (groupName) => {
-    setOpenGroup((prev) => (prev === groupName ? null : groupName));
+    setOpenGroup((prev) => {
+      const next = prev === groupName ? null : groupName;
+
+      if (next === "reservas") setActiveReservaSub("areas");
+      if (next === "usuarios") setActiveUserSub("activos");
+
+      return next;
+    });
   };
 
+
   const itemClass = (isActive) =>
-    `flex items-center gap-2 transition ${
-      isActive
-        ? "text-purple-500 font-semibold"
-        : "text-muted-foreground hover:text-purple-400"
+    `flex items-center gap-2 transition ${isActive
+      ? "text-purple-500 font-semibold"
+      : "text-muted-foreground hover:text-purple-400"
     }`;
 
   return (
@@ -96,9 +103,8 @@ export default function PanelAdministrativo() {
                   </div>
 
                   <ChevronDown
-                    className={`h-4 w-4 text-muted-foreground transition ${
-                      openGroup === "usuarios" ? "rotate-180" : ""
-                    }`}
+                    className={`h-4 w-4 text-muted-foreground transition ${openGroup === "usuarios" ? "rotate-180" : ""
+                      }`}
                   />
                 </button>
 
@@ -146,9 +152,8 @@ export default function PanelAdministrativo() {
                   </div>
 
                   <ChevronDown
-                    className={`h-4 w-4 text-muted-foreground transition ${
-                      openGroup === "reservas" ? "rotate-180" : ""
-                    }`}
+                    className={`h-4 w-4 text-muted-foreground transition ${openGroup === "reservas" ? "rotate-180" : ""
+                      }`}
                   />
                 </button>
 

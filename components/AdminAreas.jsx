@@ -1,15 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useUser } from "@clerk/nextjs";
 import { supabase } from "@/lib/supabaseClient";
-import {
-  Plus,
-  Save,
-  Image as ImageIcon,
-  Trash2,
-  Loader2,
-} from "lucide-react";
+import { Plus, Save, Image as ImageIcon, Trash2, Loader2 } from "lucide-react";
+
+const AREAS_BUCKET = "areas"; // 👈 si tu bucket se llama distinto, cámbialo aquí
+const MAX_PHOTOS = 6;
+const SIGNED_URL_TTL = 60 * 60; // 1 hora
 
 function money(v) {
   return `$${Number(v || 0).toLocaleString("es-CO")}`;
@@ -18,6 +16,28 @@ function money(v) {
 function safeInt(v) {
   const n = parseInt(String(v ?? "0"), 10);
   return Number.isFinite(n) ? n : 0;
+}
+
+// ✅ Devuelve URL usable: intenta publicUrl, si no sirve usa signedUrl
+async function resolveStorageUrl(path) {
+  if (!path) return "";
+
+  // si ya es URL completa
+  if (path.startsWith("http://") || path.startsWith("https://")) return path;
+
+  // 1) publicUrl (si bucket es público)
+  const { data: pub } = supabase.storage.from(AREAS_BUCKET).getPublicUrl(path);
+  const publicUrl = pub?.publicUrl || "";
+
+  // 2) signedUrl (para bucket privado o cuando public no sirve)
+  const { data: signed, error: signedErr } = await supabase.storage
+    .from(AREAS_BUCKET)
+    .createSignedUrl(path, SIGNED_URL_TTL);
+
+  if (!signedErr && signed?.signedUrl) return signed.signedUrl;
+
+  // si no pudo firmar, al menos devolvemos publicUrl
+  return publicUrl;
 }
 
 export default function AdminAreas() {
@@ -75,7 +95,9 @@ export default function AdminAreas() {
 
       const { data: a, error: errAreas } = await supabase
         .from("areas")
-        .select("id, idunidad, nombre, estado, pricing_type, valor_hora, valor_fijo, max_horas_fijo")
+        .select(
+          "id, idunidad, nombre, estado, pricing_type, valor_hora, valor_fijo, max_horas_fijo, imagen_principal"
+        )
         .eq("idunidad", perfilDb.id_unidad)
         .order("id", { ascending: true });
 
@@ -83,9 +105,12 @@ export default function AdminAreas() {
       setAreas(a || []);
       setLoading(false);
 
-      // auto select first
       if ((a || []).length > 0) {
-        selectArea(a[0]);
+        await selectArea(a[0]);
+      } else {
+        setSelected(null);
+        setForm(null);
+        setPhotos([]);
       }
     };
 
@@ -104,9 +129,9 @@ export default function AdminAreas() {
       valor_hora: safeInt(area.valor_hora),
       valor_fijo: safeInt(area.valor_fijo),
       max_horas_fijo: safeInt(area.max_horas_fijo),
+      imagen_principal: area.imagen_principal ?? null,
     });
 
-    // load photos for this area
     const { data, error } = await supabase
       .from("areas_fotos")
       .select("id, id_area, path, orden")
@@ -119,11 +144,13 @@ export default function AdminAreas() {
       return;
     }
 
-    // bucket público -> getPublicUrl
-    const mapped = (data || []).map((p) => {
-      const { data: pub } = supabase.storage.from("areas").getPublicUrl(p.path);
-      return { ...p, url: pub?.publicUrl || "" };
-    });
+    // ✅ generar URLs (signed o public)
+    const mapped = await Promise.all(
+      (data || []).map(async (p) => {
+        const url = await resolveStorageUrl(p.path);
+        return { ...p, url };
+      })
+    );
 
     setPhotos(mapped);
   };
@@ -146,12 +173,15 @@ export default function AdminAreas() {
       valor_hora: 0,
       valor_fijo: 0,
       max_horas_fijo: 0,
+      imagen_principal: null,
     };
 
     const { data, error } = await supabase
       .from("areas")
       .insert([payload])
-      .select("id, idunidad, nombre, estado, pricing_type, valor_hora, valor_fijo, max_horas_fijo")
+      .select(
+        "id, idunidad, nombre, estado, pricing_type, valor_hora, valor_fijo, max_horas_fijo, imagen_principal"
+      )
       .single();
 
     setCreating(false);
@@ -163,7 +193,7 @@ export default function AdminAreas() {
     }
 
     setAreas((prev) => [...prev, data]);
-    selectArea(data);
+    await selectArea(data);
   };
 
   // ========= SAVE AREA =========
@@ -179,6 +209,7 @@ export default function AdminAreas() {
       valor_hora: safeInt(form.valor_hora),
       valor_fijo: safeInt(form.valor_fijo),
       max_horas_fijo: safeInt(form.max_horas_fijo),
+      // no tocamos imagen_principal aquí a menos que tú quieras
     };
 
     const { error } = await supabase.from("areas").update(payload).eq("id", form.id);
@@ -191,34 +222,31 @@ export default function AdminAreas() {
       return;
     }
 
-    setAreas((prev) =>
-      prev.map((a) => (a.id === form.id ? { ...a, ...payload } : a))
-    );
+    setAreas((prev) => prev.map((a) => (a.id === form.id ? { ...a, ...payload } : a)));
     alert("Guardado ✅");
   };
 
   // ========= UPLOAD PHOTOS =========
   const onPickPhotos = async (e) => {
     const files = Array.from(e.target.files || []);
-    e.target.value = ""; // permite volver a seleccionar la misma foto
+    e.target.value = "";
 
     if (!canAdmin) return alert("Sin permisos.");
     if (!selected?.id) return alert("Selecciona un área.");
     if (files.length === 0) return;
 
-    // max 6
-    const remaining = Math.max(0, 6 - photos.length);
+    const remaining = Math.max(0, MAX_PHOTOS - photos.length);
     const toUpload = files.slice(0, remaining);
-
     if (toUpload.length === 0) return alert("Ya tienes 6 fotos en esta galería.");
 
     setUploading(true);
 
     try {
+      // ✅ baseOrden fijo para evitar duplicados
+      const baseOrden = photos.length;
+
       for (let i = 0; i < toUpload.length; i++) {
         const file = toUpload[i];
-
-        // validación básica
         if (!file.type.startsWith("image/")) continue;
 
         const ext = file.name.split(".").pop()?.toLowerCase() || "jpg";
@@ -226,7 +254,7 @@ export default function AdminAreas() {
         const path = `area_${selected.id}/${filename}`;
 
         const { error: upErr } = await supabase.storage
-          .from("areas")
+          .from(AREAS_BUCKET)
           .upload(path, file, { upsert: false, contentType: file.type });
 
         if (upErr) {
@@ -235,8 +263,8 @@ export default function AdminAreas() {
           continue;
         }
 
-        // guarda en DB
-        const orden = photos.length + i;
+        const orden = baseOrden + i;
+
         const { data: row, error: insErr } = await supabase
           .from("areas_fotos")
           .insert([{ id_area: selected.id, path, orden }])
@@ -249,8 +277,25 @@ export default function AdminAreas() {
           continue;
         }
 
-        const { data: pub } = supabase.storage.from("areas").getPublicUrl(path);
-        setPhotos((prev) => [...prev, { ...row, url: pub?.publicUrl || "" }]);
+        const url = await resolveStorageUrl(path);
+
+        setPhotos((prev) => [...prev, { ...row, url }]);
+
+        // ✅ si el área NO tiene imagen_principal, pon la primera foto como principal
+        const hasPrincipal = !!(form?.imagen_principal || selected?.imagen_principal);
+        if (!hasPrincipal && i === 0) {
+          const { error: upAreaErr } = await supabase
+            .from("areas")
+            .update({ imagen_principal: path })
+            .eq("id", selected.id);
+
+          if (!upAreaErr) {
+            setForm((p) => ({ ...p, imagen_principal: path }));
+            setAreas((prev) =>
+              prev.map((a) => (a.id === selected.id ? { ...a, imagen_principal: path } : a))
+            );
+          }
+        }
       }
     } finally {
       setUploading(false);
@@ -261,7 +306,6 @@ export default function AdminAreas() {
     if (!canAdmin) return;
     if (!confirm("¿Eliminar esta foto?")) return;
 
-    // 1) DB
     const { error: delErr } = await supabase.from("areas_fotos").delete().eq("id", p.id);
     if (delErr) {
       console.error(delErr);
@@ -269,14 +313,27 @@ export default function AdminAreas() {
       return;
     }
 
-    // 2) Storage
-    const { error: rmErr } = await supabase.storage.from("areas").remove([p.path]);
+    const { error: rmErr } = await supabase.storage.from(AREAS_BUCKET).remove([p.path]);
     if (rmErr) {
       console.warn("No se pudo borrar del bucket:", rmErr);
-      // no bloquea: ya borró en DB
     }
 
     setPhotos((prev) => prev.filter((x) => x.id !== p.id));
+
+    // Si borraste la foto que era principal, opcionalmente limpia principal
+    if (form?.imagen_principal === p.path) {
+      const { error } = await supabase
+        .from("areas")
+        .update({ imagen_principal: null })
+        .eq("id", selected.id);
+
+      if (!error) {
+        setForm((x) => ({ ...x, imagen_principal: null }));
+        setAreas((prev) =>
+          prev.map((a) => (a.id === selected.id ? { ...a, imagen_principal: null } : a))
+        );
+      }
+    }
   };
 
   if (!canAdmin) {
@@ -452,7 +509,7 @@ export default function AdminAreas() {
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
                     className="inline-flex items-center gap-2 rounded-xl bg-white/10 px-3 py-2 text-xs font-semibold hover:bg-white/15 transition"
-                    disabled={uploading || photos.length >= 6}
+                    disabled={uploading || photos.length >= MAX_PHOTOS}
                   >
                     {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
                     Añadir fotos
@@ -461,7 +518,7 @@ export default function AdminAreas() {
               </div>
 
               <p className="mt-2 text-xs text-muted-foreground">
-                Fotos actuales: {photos.length} / 6
+                Fotos actuales: {photos.length} / {MAX_PHOTOS}
               </p>
 
               {photos.length === 0 ? (
@@ -480,7 +537,7 @@ export default function AdminAreas() {
                           src={p.url}
                           alt="foto área"
                           className="h-full w-full object-cover"
-                          onError={() => console.warn("No cargó imagen:", p.url)}
+                          onError={() => console.warn("No cargó imagen (URL):", p.url, "path:", p.path)}
                         />
                       </div>
                       <div className="flex items-center justify-between p-2">
@@ -501,12 +558,16 @@ export default function AdminAreas() {
                 </div>
               )}
 
-              {/* mini resumen precio */}
               <div className="mt-4 text-xs text-muted-foreground">
                 {form.pricing_type === "fijo" ? (
-                  <>Precio fijo: <b className="text-foreground">{money(form.valor_fijo)}</b> · Máx horas: <b className="text-foreground">{safeInt(form.max_horas_fijo)}</b></>
+                  <>
+                    Precio fijo: <b className="text-foreground">{money(form.valor_fijo)}</b> ·
+                    Máx horas: <b className="text-foreground">{safeInt(form.max_horas_fijo)}</b>
+                  </>
                 ) : (
-                  <>Precio por hora: <b className="text-foreground">{money(form.valor_hora)}</b></>
+                  <>
+                    Precio por hora: <b className="text-foreground">{money(form.valor_hora)}</b>
+                  </>
                 )}
               </div>
             </div>
