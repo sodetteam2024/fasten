@@ -42,8 +42,8 @@ import ReservationFormModal from "@/components/ReservationFormModal";
 /* =========================================================
    CONFIG (AJUSTA ESTO)
 ========================================================= */
-const AREAS_BUCKET = "areas"; // 👈 cambia por tu bucket real
-const FOTOS_TABLE = "areas_fotos"; // 👈 cambia si tu tabla se llama distinto
+const AREAS_BUCKET = "areas";
+const FOTOS_TABLE = "areas_fotos";
 const SIGNED_URL_TTL = 60 * 30; // 30 minutos
 
 /* =========================================================
@@ -144,7 +144,11 @@ function pricingLabel(areaRow) {
     const fijo = Number(areaRow?.valor_fijo || 0);
     const maxH = Number(areaRow?.max_horas_fijo || 0);
 
-    if (fijo <= 0) return { main: "Gratuito", sub: maxH > 0 ? `Fijo · hasta ${maxH}h` : "Fijo" };
+    if (fijo <= 0)
+      return {
+        main: "Gratuito",
+        sub: maxH > 0 ? `Fijo · hasta ${maxH}h` : "Fijo",
+      };
 
     return {
       main: money(fijo),
@@ -160,7 +164,7 @@ function pricingLabel(areaRow) {
 }
 
 /* =========================================================
-   Storage URL helpers (funciona con bucket privado o público)
+   Storage URL helpers (bucket privado o público)
 ========================================================= */
 function getPublicUrl(path) {
   if (!path) return null;
@@ -213,7 +217,7 @@ export default function ReservationsPage() {
   const [customEndTime, setCustomEndTime] = useState("");
   const [savingReservation, setSavingReservation] = useState(false);
 
-  // cache simple para signed urls (evita pegarle al storage por cada render)
+  // cache simple para urls (public o signed)
   const [signedCache, setSignedCache] = useState(() => new Map());
 
   const [reservationForm, setReservationForm] = useState({
@@ -240,14 +244,12 @@ export default function ReservationsPage() {
 
     if (signedCache.has(key)) return signedCache.get(key);
 
-    // intentamos público primero
     const pub = getPublicUrl(path);
     if (pub) {
       setSignedCache((prev) => new Map(prev).set(key, pub));
       return pub;
     }
 
-    // si no, firmamos
     const signed = await getSignedUrl(path);
     if (signed) setSignedCache((prev) => new Map(prev).set(key, signed));
     return signed;
@@ -300,10 +302,12 @@ export default function ReservationsPage() {
       }
       setPerfilDb(perfil);
 
-      // áreas (con pricing nuevo)
+      // áreas
       const { data: areas, error: errAreas } = await supabase
         .from("areas")
-        .select("id, idunidad, nombre, estado, created_at, pricing_type, valor_hora, valor_fijo, max_horas_fijo")
+        .select(
+          "id, idunidad, nombre, estado, created_at, pricing_type, valor_hora, valor_fijo, max_horas_fijo, imagen_principal"
+        )
         .eq("idunidad", perfil.id_unidad)
         .eq("estado", "activa")
         .order("id", { ascending: true });
@@ -314,20 +318,20 @@ export default function ReservationsPage() {
       } else {
         const areaIds = (areas || []).map((a) => a.id);
 
-        // fotos (máx 6 por área) — NO usamos join para evitar líos de FK/nombres
+        // ✅ fotos (columnas reales: id_area)
         let fotosByArea = new Map();
         if (areaIds.length > 0) {
           const { data: fotos, error: errFotos } = await supabase
             .from(FOTOS_TABLE)
-            .select("id, area_id, path, orden, created_at")
-            .in("area_id", areaIds)
+            .select("id, id_area, path, orden, created_at")
+            .in("id_area", areaIds)
             .order("orden", { ascending: true });
 
           if (errFotos) {
             console.warn("No se pudieron cargar fotos:", errFotos);
           } else {
             for (const f of fotos || []) {
-              const k = String(f.area_id);
+              const k = String(f.id_area);
               if (!fotosByArea.has(k)) fotosByArea.set(k, []);
               fotosByArea.get(k).push(f);
             }
@@ -337,12 +341,23 @@ export default function ReservationsPage() {
         const mapped = await Promise.all(
           (areas || []).map(async (a) => {
             const Icon = iconForAreaName(a.nombre);
+            const price = pricingLabel(a);
 
             const fotos = (fotosByArea.get(String(a.id)) || []).slice(0, 6);
-            const heroPath = fotos?.[0]?.path || null;
+
+            // ✅ prioridad: imagen_principal si existe, si no primera foto
+            const heroPath = a.imagen_principal || fotos?.[0]?.path || null;
             const heroUrl = heroPath ? await ensureSignedUrl(heroPath) : null;
 
-            const price = pricingLabel(a);
+            const photos = await Promise.all(
+              fotos.map(async (f) => ({
+                id: f.id,
+                id_area: f.id_area,
+                path: f.path,
+                orden: f.orden ?? 0,
+                url: await ensureSignedUrl(f.path),
+              }))
+            );
 
             return {
               id: a.id,
@@ -352,25 +367,16 @@ export default function ReservationsPage() {
               capacity: "Consultar",
               hours: "Según disponibilidad",
 
-              // pricing nuevo
-              pricing_type: a.pricing_type || "hora",
+              pricing_type: a.pricing_type || "por_hora",
               valor_hora: a.valor_hora ?? 0,
               valor_fijo: a.valor_fijo ?? 0,
               max_horas_fijo: a.max_horas_fijo ?? null,
               price: price.main,
               priceSub: price.sub,
 
-              // imágenes
               heroImage: heroUrl,
-              photos: await Promise.all(
-                fotos.map(async (f) => ({
-                  id: f.id,
-                  area_id: f.area_id,
-                  path: f.path,
-                  orden: f.orden ?? 0,
-                  url: await ensureSignedUrl(f.path),
-                }))
-              ),
+              heroPath,
+              photos,
 
               color: "from-[#7b2ae6] to-[#f9b009]",
               timeSlots: [
@@ -487,7 +493,7 @@ export default function ReservationsPage() {
      Selección de área
   ========================================================= */
   const handleSpaceSelect = (space) => {
-    setSelectedSpace(space); // 👈 ahora trae heroImage + photos + pricing
+    setSelectedSpace(space);
     setShowReservationForm(true);
     setSelectedDate("");
     setSelectedTimeSlot("");
@@ -912,7 +918,7 @@ export default function ReservationsPage() {
               {/* Modal */}
               <ReservationFormModal
                 open={showReservationForm}
-                selectedSpace={selectedSpace} // 👈 ya incluye photos + pricing
+                selectedSpace={selectedSpace}
                 selectedDate={selectedDate}
                 setSelectedDate={setSelectedDate}
                 selectedTimeSlot={selectedTimeSlot}
@@ -933,7 +939,7 @@ export default function ReservationsPage() {
                 onClose={closeModal}
               />
 
-              {/* Mis Reservas (igual que antes) */}
+              {/* Mis Reservas */}
               <div className="space-y-6">
                 <div className="flex flex-col sm:flex-row gap-4 mb-6">
                   <div className="flex-1 relative">
@@ -1037,7 +1043,9 @@ export default function ReservationsPage() {
                                     <div className="flex items-center space-x-2">
                                       <Calendar className="h-4 w-4 text-slate-400" />
                                       <span>
-                                        {new Date(reservation.date + "T00:00:00").toLocaleDateString("es-CO")}
+                                        {new Date(
+                                          reservation.date + "T00:00:00"
+                                        ).toLocaleDateString("es-CO")}
                                       </span>
                                     </div>
                                     <div className="flex items-center space-x-2">
@@ -1054,7 +1062,10 @@ export default function ReservationsPage() {
                                     <p className="text-xs text-slate-600 dark:text-slate-300">
                                       Cargo:{" "}
                                       <span className="font-semibold">
-                                        ${Number(reservation._cargoValor).toLocaleString("es-CO")}
+                                        $
+                                        {Number(reservation._cargoValor).toLocaleString(
+                                          "es-CO"
+                                        )}
                                       </span>{" "}
                                       ({reservation._cargoEstado || "pendiente"})
                                     </p>
@@ -1063,18 +1074,23 @@ export default function ReservationsPage() {
                                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                                     Solicitada el{" "}
                                     {reservation.createdDate
-                                      ? new Date(reservation.createdDate + "T00:00:00").toLocaleDateString("es-CO")
+                                      ? new Date(
+                                          reservation.createdDate + "T00:00:00"
+                                        ).toLocaleDateString("es-CO")
                                       : ""}
                                   </p>
                                 </div>
                               </div>
 
                               <div className="flex flex-col gap-2 items-end">
-                                {(reservation.status === "pending" || reservation.status === "confirmed") && (
+                                {(reservation.status === "pending" ||
+                                  reservation.status === "confirmed") && (
                                   <Button
                                     size="sm"
                                     variant="outline"
-                                    onClick={() => handleCancelReservation(reservation.id)}
+                                    onClick={() =>
+                                      handleCancelReservation(reservation.id)
+                                    }
                                     className="border-red-200 hover:bg-red-50 text-red-600 dark:hover:bg-red-950/30"
                                   >
                                     <XCircle className="h-4 w-4 mr-1" />
