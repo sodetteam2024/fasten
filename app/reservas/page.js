@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import {
   CalendarDays,
   Users,
@@ -19,14 +19,13 @@ import {
   Gamepad2,
   BookOpen,
   Image as ImageIcon,
-  ChevronLeft,
-  ChevronRight,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import MyReservationsSection from "@/components/MyReservationsSection";
 import {
   Select,
   SelectContent,
@@ -45,8 +44,11 @@ import ReservationFormModal from "@/components/ReservationFormModal";
    CONFIG
 ========================================================= */
 const AREAS_BUCKET = "areas";
-const SIGNED_URL_TTL = 60 * 30; // 30 minutos
-const SIGNED_SAFETY_MS = 15_000; // margen para refrescar antes de expirar
+const SIGNED_URL_TTL = 60 * 30; // 30 min
+const SIGNED_SAFETY_MS = 15_000;
+
+// ✅ VIEW que devuelve 1 foto por área (la más reciente)
+const AREAS_LAST_PHOTO_VIEW = "areas_foto_ultima";
 
 /* =========================================================
    Helpers fecha/horario
@@ -117,63 +119,6 @@ function parseSlotToISO(selectedDate, slot) {
   return null;
 }
 
-function AreaCarousel({ photos, name }) {
-  const [currentIndex, setCurrentIndex] = useState(0);
-
-  if (!photos || photos.length === 0) {
-    return (
-      <div className="h-full w-full flex items-center justify-center bg-slate-100 dark:bg-white/5">
-        <ImageIcon className="h-8 w-8 text-slate-400" />
-      </div>
-    );
-  }
-
-  const next = (e) => {
-    e.stopPropagation();
-    setCurrentIndex((prev) => (prev + 1) % photos.length);
-  };
-
-  const prev = (e) => {
-    e.stopPropagation();
-    setCurrentIndex((prev) => (prev - 1 + photos.length) % photos.length);
-  };
-
-  return (
-    <div className="relative h-full w-full group">
-      <img
-        src={photos[currentIndex].url}
-        alt={`${name} - ${currentIndex}`}
-        className="h-full w-full object-cover transition-opacity duration-500"
-      />
-
-      {photos.length > 1 && (
-        <>
-          <button
-            onClick={prev}
-            className="absolute left-2 top-1/2 -translate-y-1/2 bg-black/30 hover:bg-black/60 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
-          >
-            <ChevronLeft size={16} />
-          </button>
-          <button
-            onClick={next}
-            className="absolute right-2 top-1/2 -translate-y-1/2 bg-black/30 hover:bg-black/60 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
-          >
-            <ChevronRight size={16} />
-          </button>
-          <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1">
-            {photos.map((_, i) => (
-              <div
-                key={i}
-                className={`h-1.5 w-1.5 rounded-full ${i === currentIndex ? 'bg-white' : 'bg-white/40'}`}
-              />
-            ))}
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
 /* =========================================================
    Iconos por nombre
 ========================================================= */
@@ -204,25 +149,18 @@ function pricingLabel(areaRow) {
     const maxH = Number(areaRow?.max_horas_fijo || 0);
 
     if (fijo <= 0)
-      return {
-        main: "Gratuito",
-        sub: maxH > 0 ? `Fijo · hasta ${maxH}h` : "Fijo",
-      };
+      return { main: "Gratuito", sub: maxH > 0 ? `Fijo · hasta ${maxH}h` : "Fijo" };
 
-    return {
-      main: money(fijo),
-      sub: maxH > 0 ? `Fijo · hasta ${maxH}h` : "Precio fijo",
-    };
+    return { main: money(fijo), sub: maxH > 0 ? `Fijo · hasta ${maxH}h` : "Precio fijo" };
   }
 
   const vh = Number(areaRow?.valor_hora || 0);
   if (vh <= 0) return { main: "Gratuito", sub: "Por hora" };
-
   return { main: `${money(vh)}/hora`, sub: "Por hora" };
 }
 
 /* =========================================================
-   Storage URL helpers (con cache y refresh por expiración)
+   Storage URL helpers
 ========================================================= */
 function tryPublicUrl(path) {
   if (!path) return null;
@@ -292,94 +230,44 @@ export default function ReservationsPage() {
     return null;
   }
 
-  async function ensureUrl(path) {
-    if (!path) return null;
-    const key = String(path);
+  const ensureUrl = useCallback(
+    async (path) => {
+      if (!path) return null;
+      const key = String(path);
 
-    const cached = urlCache.get(key);
-    if (cached?.url && cached?.expMs && Date.now() < cached.expMs) return cached.url;
+      const cached = urlCache.get(key);
+      if (cached?.url && cached?.expMs && Date.now() < cached.expMs) return cached.url;
 
-    // 1) intentar público
-    const pub = tryPublicUrl(path);
-    if (pub) {
-      setUrlCache((prev) => {
-        const next = new Map(prev);
-        next.set(key, { url: pub, expMs: Date.now() + 365 * 24 * 3600 * 1000 });
-        return next;
-      });
-      return pub;
-    }
-
-    // 2) firmar
-    const signed = await createSignedUrl(path);
-    if (signed) {
-      setUrlCache((prev) => {
-        const next = new Map(prev);
-        next.set(key, {
-          url: signed,
-          expMs: Date.now() + SIGNED_URL_TTL * 1000 - SIGNED_SAFETY_MS,
+      const pub = tryPublicUrl(path);
+      if (pub) {
+        setUrlCache((prev) => {
+          const next = new Map(prev);
+          next.set(key, { url: pub, expMs: Date.now() + 365 * 24 * 3600 * 1000 });
+          return next;
         });
-        return next;
-      });
-      return signed;
-    }
+        return pub;
+      }
 
-    return null;
-  }
+      const signed = await createSignedUrl(path);
+      if (signed) {
+        setUrlCache((prev) => {
+          const next = new Map(prev);
+          next.set(key, {
+            url: signed,
+            expMs: Date.now() + SIGNED_URL_TTL * 1000 - SIGNED_SAFETY_MS,
+          });
+          return next;
+        });
+        return signed;
+      }
 
-  // ✅ ahora NO hacemos query aparte a areas_fotos: las fotos vienen embebidas en el select.
-  async function hydrateAreaImages(areas) {
-    const mapped = await Promise.all(
-      (areas || []).map(async (a) => {
-        const Icon = iconForAreaName(a.nombre);
-        const price = pricingLabel(a);
-
-        // Ordenar y obtener todas las fotos
-        const fotosRaw = (a.areas_fotos || [])
-          .slice()
-          .sort((x, y) => (x.orden ?? 0) - (y.orden ?? 0));
-
-        // Generar URLs firmadas/públicas para todas las fotos del carrusel
-        const photos = await Promise.all(
-          fotosRaw.map(async (f) => ({
-            id: f.id,
-            url: await ensureUrl(f.path),
-          }))
-        );
-
-        // Imagen principal (si no hay fotos en areas_fotos, usa imagen_principal)
-        const heroPath = a.imagen_principal || fotosRaw?.[0]?.path || null;
-        const heroImage = heroPath ? await ensureUrl(heroPath) : null;
-
-        return {
-          id: a.id,
-          name: a.nombre,
-          icon: Icon,
-          description: a.descripcion || "Reserva por horario según disponibilidad",
-          capacity: a.capacidad ? `${a.capacidad} personas` : "Consultar",
-          hours: "Según disponibilidad",
-          pricing_type: a.pricing_type,
-          valor_hora: a.valor_hora,
-          valor_fijo: a.valor_fijo,
-          price: price.main,
-          priceSub: price.sub,
-          heroImage,
-          photos: photos.length > 0 ? photos : (heroImage ? [{ id: 'hero', url: heroImage }] : []),
-          color: "from-[#7b2ae6] to-[#f9b009]",
-          timeSlots: [
-            "6:00 AM - 8:00 AM", "8:00 AM - 10:00 AM", "10:00 AM - 12:00 PM",
-            "12:00 PM - 2:00 PM", "2:00 PM - 4:00 PM", "4:00 PM - 6:00 PM",
-            "6:00 PM - 8:00 PM", "8:00 PM - 10:00 PM"
-          ],
-        };
-      })
-    );
-    return mapped;
-  }
-
+      return null;
+    },
+    [urlCache]
+  );
 
   /* =========================================================
-     Cargar usuario + perfil + áreas + reservas (+ cargos)
+     LOAD
   ========================================================= */
   useEffect(() => {
     if (!user?.id) return;
@@ -388,7 +276,6 @@ export default function ReservationsPage() {
       setLoadingSpaces(true);
       setLoadingReservations(true);
 
-      // usuario
       const { data: usuario, error: errUsuario } = await supabase
         .from("usuarios")
         .select("id_usuario, idrol")
@@ -407,7 +294,6 @@ export default function ReservationsPage() {
       }
       setUsuarioDb(usuario);
 
-      // perfil
       const { data: perfil, error: errPerfil } = await supabase
         .from("perfilesusuarios")
         .select("id_perfil, id_unidad, nombre, apellido")
@@ -425,27 +311,12 @@ export default function ReservationsPage() {
       }
       setPerfilDb(perfil);
 
-      // ✅ áreas + fotos en el MISMO SELECT (FIX)
+      // 1) Áreas
       const { data: areas, error: errAreas } = await supabase
         .from("areas")
-        .select(`
-          id,
-          idunidad,
-          nombre,
-          estado,
-          created_at,
-          pricing_type,
-          valor_hora,
-          valor_fijo,
-          max_horas_fijo,
-          imagen_principal,
-          areas_fotos (
-            id,
-            path,
-            orden,
-            created_at
-          )
-        `)
+        .select(
+          "id, idunidad, nombre, estado, created_at, pricing_type, valor_hora, valor_fijo, max_horas_fijo, imagen_principal, capacidad"
+        )
         .eq("idunidad", perfil.id_unidad)
         .eq("estado", "activa")
         .order("id", { ascending: true });
@@ -453,13 +324,72 @@ export default function ReservationsPage() {
       if (errAreas) {
         console.error("Error cargando áreas:", errAreas);
         setSpaces([]);
+        setLoadingSpaces(false);
       } else {
-        const mappedSpaces = await hydrateAreaImages(areas || []);
-        setSpaces(mappedSpaces);
-      }
-      setLoadingSpaces(false);
+        // 2) Última foto por área (VIEW) -> 1 fila por área
+        const areaIds = (areas || []).map((a) => a.id);
+        let fotoMap = new Map();
 
-      // reservas del usuario (solo para “Mis reservas”)
+        if (areaIds.length > 0) {
+          const { data: ultimasFotos, error: errUlt } = await supabase
+            .from(AREAS_LAST_PHOTO_VIEW)
+            .select("id_area, foto_id, foto_path, foto_created_at")
+            .in("id_area", areaIds);
+
+          if (errUlt) {
+            console.warn("No se pudieron cargar últimas fotos (view):", errUlt);
+          } else {
+            fotoMap = new Map(
+              (ultimasFotos || []).map((f) => [String(f.id_area), f])
+            );
+          }
+        }
+
+        const mappedSpaces = await Promise.all(
+          (areas || []).map(async (a) => {
+            const Icon = iconForAreaName(a.nombre);
+            const price = pricingLabel(a);
+
+            const f = fotoMap.get(String(a.id));
+            // ✅ prioridad: última foto del view; si no hay, imagen_principal
+            const heroPath = f?.foto_path || a.imagen_principal || null;
+            const heroImage = heroPath ? await ensureUrl(heroPath) : null;
+
+            return {
+              id: a.id,
+              name: a.nombre,
+              icon: Icon,
+              capacity: a.capacidad ? `${a.capacidad} personas` : "Consultar",
+              hours: "Según disponibilidad",
+              pricing_type: a.pricing_type || "por_hora",
+              valor_hora: a.valor_hora ?? 0,
+              valor_fijo: a.valor_fijo ?? 0,
+              max_horas_fijo: a.max_horas_fijo ?? null,
+              price: price.main,
+              priceSub: price.sub,
+              heroImage,
+              heroPath,
+              color: "from-[#7b2ae6] to-[#f9b009]",
+              timeSlots: [
+                "6:00 AM - 8:00 AM",
+                "8:00 AM - 10:00 AM",
+                "10:00 AM - 12:00 PM",
+                "12:00 PM - 2:00 PM",
+                "2:00 PM - 4:00 PM",
+                "4:00 PM - 6:00 PM",
+                "6:00 PM - 8:00 PM",
+                "8:00 PM - 10:00 PM",
+              ],
+            };
+          })
+        );
+
+        setSpaces(mappedSpaces);
+        setLoadingSpaces(false);
+      }
+
+
+      // reservas
       const { data: resv, error: errResv } = await supabase
         .from("reservas")
         .select(
@@ -534,7 +464,9 @@ export default function ReservationsPage() {
           purpose: "",
           notes: "",
           reservedBy: userName,
-          createdDate: r.created_at ? new Date(r.created_at).toISOString().slice(0, 10) : "",
+          createdDate: r.created_at
+            ? new Date(r.created_at).toISOString().slice(0, 10)
+            : "",
           _raw: r,
           _cargoId: cargo?.id ?? null,
           _cargoValor: cargo?.valor ?? null,
@@ -547,13 +479,14 @@ export default function ReservationsPage() {
     };
 
     loadAll();
-  }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [user?.id, ensureUrl]);
 
   /* =========================================================
-     Selección de área
+     Abrir modal SOLO con botón
   ========================================================= */
-  const handleSpaceSelect = (space) => {
+  const openReserveModal = (space) => {
     const fresh = spaces.find((s) => String(s.id) === String(space.id)) || space;
+
     setSelectedSpace(fresh);
     setShowReservationForm(true);
     setSelectedDate("");
@@ -612,20 +545,6 @@ export default function ReservationsPage() {
       return;
     }
 
-    let cargoValor = null;
-    let cargoId = null;
-    try {
-      const { data: cargo } = await supabase
-        .from("cargos")
-        .select("id, valor, estado")
-        .eq("source_type", "reserva")
-        .eq("source_id", data.id)
-        .single();
-
-      if (cargo?.id) cargoId = cargo.id;
-      if (cargo?.valor != null) cargoValor = cargo.valor;
-    } catch { }
-
     setReservations((prev) => [
       {
         id: String(data.id),
@@ -640,9 +559,6 @@ export default function ReservationsPage() {
         reservedBy: userName,
         createdDate: new Date().toISOString().split("T")[0],
         _raw: data,
-        _cargoId: cargoId,
-        _cargoValor: cargoValor,
-        _cargoEstado: "pendiente",
       },
       ...prev,
     ]);
@@ -757,7 +673,7 @@ export default function ReservationsPage() {
   };
 
   /* =========================================================
-     Calendario
+     Calendario (para modal)
   ========================================================= */
   const getDaysInMonth = (date) =>
     new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
@@ -886,12 +802,29 @@ export default function ReservationsPage() {
                     {spaces.map((space) => (
                       <Card
                         key={space.id}
-                        className="overflow-hidden shadow-lg border border-black/10 dark:border-white/10 bg-white dark:bg-black hover:shadow-xl transition-all duration-300 hover:scale-[1.02] cursor-pointer"
-                        onClick={() => handleSpaceSelect(space)}
+                        className="overflow-hidden shadow-lg border border-black/10 dark:border-white/10 bg-white dark:bg-black transition-all duration-300 hover:shadow-2xl"
                       >
-                        {/* ÁREA DEL CARRUSEL */}
+                        {/* FOTO ÚLTIMA (VIEW) */}
                         <div className="relative aspect-[16/10] bg-black/5 dark:bg-white/5">
-                          <AreaCarousel photos={space.photos} name={space.name} />
+                          {space.heroImage ? (
+                            <img
+                              src={space.heroImage}
+                              alt={space.name}
+                              className="h-full w-full object-cover"
+                              loading="lazy"
+                              onError={async (e) => {
+                                if (!space.heroPath) return;
+                                const fresh = await ensureUrl(space.heroPath);
+                                if (fresh) e.currentTarget.src = fresh;
+                              }}
+                            />
+                          ) : (
+                            <div className="h-full w-full flex items-center justify-center">
+                              <div className="h-14 w-14 rounded-2xl bg-black/10 dark:bg-white/10 flex items-center justify-center">
+                                <ImageIcon className="h-6 w-6 text-slate-400" />
+                              </div>
+                            </div>
+                          )}
 
                           <div className="absolute left-3 top-3 z-10 rounded-full bg-black/55 text-white text-[11px] px-3 py-1 backdrop-blur">
                             {space.price}
@@ -928,12 +861,21 @@ export default function ReservationsPage() {
                               </div>
                             </div>
 
-                            <Button
-                              className={`w-full bg-gradient-to-r ${space.color} text-white shadow-[0_14px_40px_rgba(0,0,0,0.35)] hover:opacity-95 hover:shadow-[0_18px_55px_rgba(0,0,0,0.45)] transition-all duration-300`}
-                            >
-                              <Plus className="h-4 w-4 mr-2" />
-                              Reservar
-                            </Button>
+                            {/* BOTÓN COMO CAPA DEL FRENTE */}
+                            <div className="relative z-20 pt-2">
+                              <Button
+                                type="button"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation(); // Evita que el evento suba a la Card
+                                  openReserveModal(space); // Pasa el objeto space completo al modal
+                                }}
+                                className={`w-full bg-gradient-to-r ${space.color} text-white font-bold py-6 rounded-xl shadow-[0_10px_30px_-10px_rgba(0,0,0,0.3)] hover:scale-[1.02] active:scale-[0.98] transition-all duration-300 z-30`}
+                              >
+                                <Plus className="h-5 w-5 mr-2 stroke-[3px]" />
+                                Reservar
+                              </Button>
+                            </div>
                           </div>
                         </CardContent>
                       </Card>
@@ -966,175 +908,23 @@ export default function ReservationsPage() {
                 onClose={closeModal}
               />
 
-              {/* Mis Reservas */}
-              <div className="space-y-6">
-                <div className="flex flex-col sm:flex-row gap-4 mb-6">
-                  <div className="flex-1 relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 h-4 w-4" />
-                    <Input
-                      placeholder="Buscar reservas por espacio o motivo..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="pl-10 bg-white dark:bg-black border-black/10 dark:border-white/10"
-                    />
-                  </div>
-
-                  <Select value={filterStatus} onValueChange={setFilterStatus}>
-                    <SelectTrigger className="w-full sm:w-48 bg-white dark:bg-black border-black/10 dark:border-white/10">
-                      <Filter className="h-4 w-4 mr-2" />
-                      <SelectValue placeholder="Estado" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Todos los estados</SelectItem>
-                      <SelectItem value="pending">Pendientes</SelectItem>
-                      <SelectItem value="confirmed">Confirmadas</SelectItem>
-                      <SelectItem value="completed">Completadas</SelectItem>
-                      <SelectItem value="cancelled">Canceladas</SelectItem>
-                    </SelectContent>
-                  </Select>
-
-                  <Select value={filterSpace} onValueChange={setFilterSpace}>
-                    <SelectTrigger className="w-full sm:w-48 bg-white dark:bg-black border-black/10 dark:border-white/10">
-                      <SelectValue placeholder="Espacio" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Todos los espacios</SelectItem>
-                      {spaces.map((space) => (
-                        <SelectItem key={space.id} value={String(space.id)}>
-                          {space.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <h2 className="text-2xl font-bold bg-gradient-to-r from-[#7b2ae6] to-[#f9b009] bg-clip-text text-transparent">
-                  Mis Reservas ({filteredReservations.length})
-                </h2>
-
-                {loadingReservations ? (
-                  <Card className="shadow-lg border border-black/10 dark:border-white/10 bg-white dark:bg-black">
-                    <CardContent className="p-12 text-center text-slate-600 dark:text-slate-300">
-                      Cargando reservas...
-                    </CardContent>
-                  </Card>
-                ) : filteredReservations.length === 0 ? (
-                  <Card className="shadow-lg border border-black/10 dark:border-white/10 bg-white dark:bg-black">
-                    <CardContent className="p-12 text-center">
-                      <CalendarDays className="h-16 w-16 text-slate-300 dark:text-white/20 mx-auto mb-4" />
-                      <h3 className="text-lg font-semibold text-slate-600 dark:text-slate-200 mb-2">
-                        No se encontraron reservas
-                      </h3>
-                      <p className="text-slate-500 dark:text-slate-300">
-                        {searchTerm || filterStatus !== "all" || filterSpace !== "all"
-                          ? "Intenta ajustar los filtros de búsqueda"
-                          : "Realiza tu primera reserva de un espacio común"}
-                      </p>
-                    </CardContent>
-                  </Card>
-                ) : (
-                  <div className="space-y-4">
-                    {filteredReservations.map((reservation) => {
-                      const space = spaces.find(
-                        (s) => String(s.id) === String(reservation.spaceId)
-                      );
-                      const Icon = space?.icon || CalendarDays;
-
-                      return (
-                        <Card
-                          key={reservation.id}
-                          className="shadow-lg border border-black/10 dark:border-white/10 bg-white dark:bg-black hover:shadow-xl transition-all duration-300 hover:scale-[1.01]"
-                        >
-                          <CardContent className="p-6">
-                            <div className="flex items-start justify-between gap-4">
-                              <div className="flex items-start space-x-4 flex-1">
-                                <div
-                                  className={`w-12 h-12 bg-gradient-to-br ${space?.color || "from-[#7b2ae6] to-[#f9b009]"
-                                    } rounded-full flex items-center justify-center flex-shrink-0 shadow-lg`}
-                                >
-                                  <Icon className="h-6 w-6 text-white" />
-                                </div>
-
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center space-x-3 mb-2">
-                                    <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
-                                      {reservation.spaceName}
-                                    </h3>
-                                    <Badge className={getStatusColor(reservation.status)}>
-                                      {getStatusText(reservation.status)}
-                                    </Badge>
-                                  </div>
-
-                                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm text-slate-600 dark:text-slate-300 mb-3">
-                                    <div className="flex items-center space-x-2">
-                                      <Calendar className="h-4 w-4 text-slate-400" />
-                                      <span>
-                                        {new Date(reservation.date + "T00:00:00").toLocaleDateString("es-CO")}
-                                      </span>
-                                    </div>
-                                    <div className="flex items-center space-x-2">
-                                      <Clock className="h-4 w-4 text-slate-400" />
-                                      <span>{reservation.timeSlot}</span>
-                                    </div>
-                                    <div className="flex items-center space-x-2">
-                                      <Users className="h-4 w-4 text-slate-400" />
-                                      <span>{reservation.guests} invitados</span>
-                                    </div>
-                                  </div>
-
-                                  {reservation._cargoValor != null && (
-                                    <p className="text-xs text-slate-600 dark:text-slate-300">
-                                      Cargo:{" "}
-                                      <span className="font-semibold">
-                                        $
-                                        {Number(reservation._cargoValor).toLocaleString("es-CO")}
-                                      </span>{" "}
-                                      ({reservation._cargoEstado || "pendiente"})
-                                    </p>
-                                  )}
-
-                                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                                    Solicitada el{" "}
-                                    {reservation.createdDate
-                                      ? new Date(reservation.createdDate + "T00:00:00").toLocaleDateString("es-CO")
-                                      : ""}
-                                  </p>
-                                </div>
-                              </div>
-
-                              <div className="flex flex-col gap-2 items-end">
-                                {(reservation.status === "pending" ||
-                                  reservation.status === "confirmed") && (
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      onClick={() => handleCancelReservation(reservation.id)}
-                                      className="border-red-200 hover:bg-red-50 text-red-600 dark:hover:bg-red-950/30"
-                                    >
-                                      <XCircle className="h-4 w-4 mr-1" />
-                                      Cancelar
-                                    </Button>
-                                  )}
-
-                                {shouldShowPayButton(reservation) && (
-                                  <Button
-                                    size="sm"
-                                    onClick={() => handlePayReservation(reservation)}
-                                    className="bg-gradient-to-r from-[#7b2ae6] to-[#f9b009] text-white hover:opacity-95 shadow-lg"
-                                  >
-                                    <CheckCircle className="h-4 w-4 mr-1" />
-                                    Pagar
-                                  </Button>
-                                )}
-                              </div>
-                            </div>
-                          </CardContent>
-                        </Card>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
+              <MyReservationsSection
+                reservations={reservations}
+                loadingReservations={loadingReservations}
+                filteredReservations={filteredReservations}
+                searchTerm={searchTerm}
+                setSearchTerm={setSearchTerm}
+                filterStatus={filterStatus}
+                setFilterStatus={setFilterStatus}
+                filterSpace={filterSpace}
+                setFilterSpace={setFilterSpace}
+                spaces={spaces}
+                handleCancelReservation={handleCancelReservation}
+                handlePayReservation={handlePayReservation}
+                shouldShowPayButton={shouldShowPayButton}
+                getStatusColor={getStatusColor}
+                getStatusText={getStatusText}
+              />
             </div>
           </main>
         </div>

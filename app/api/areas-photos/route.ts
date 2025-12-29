@@ -25,7 +25,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Body inválido" }, { status: 400 });
     }
 
-    const { id_area, path, orden } = body ?? {};
+    // ✅ ya no recibimos ni usamos "orden"
+    const { id_area, path } = body ?? {};
     if (!id_area || !path) {
       return NextResponse.json(
         { error: "Faltan datos: id_area o path" },
@@ -52,11 +53,17 @@ export async function POST(req: Request) {
       .single();
 
     if (userErr || !usuario) {
-      return NextResponse.json({ error: "Usuario no existe en DB" }, { status: 403 });
+      return NextResponse.json(
+        { error: "Usuario no existe en DB" },
+        { status: 403 }
+      );
     }
 
     if (![1, 2].includes(usuario.idrol)) {
-      return NextResponse.json({ error: "Sin permisos (no admin)" }, { status: 403 });
+      return NextResponse.json(
+        { error: "Sin permisos (no admin)" },
+        { status: 403 }
+      );
     }
 
     /* ============================
@@ -83,21 +90,20 @@ export async function POST(req: Request) {
     }
 
     if (Number(area.idunidad) !== Number(perfil.id_unidad)) {
-      return NextResponse.json({ error: "Área no pertenece a tu unidad" }, { status: 403 });
+      return NextResponse.json(
+        { error: "Área no pertenece a tu unidad" },
+        { status: 403 }
+      );
     }
 
     /* ============================
        Insertar foto (bypass RLS)
+       ✅ sin columna 'orden'
     ============================ */
-    const cleanOrden =
-      typeof orden === "number" && Number.isFinite(orden)
-        ? orden
-        : parseInt(String(orden ?? "0"), 10) || 0;
-
     const { data: row, error: insertErr } = await supabaseAdmin
       .from("areas_fotos")
-      .insert([{ id_area, path, orden: cleanOrden }])
-      .select("id, id_area, path, orden")
+      .insert([{ id_area, path }])
+      .select("id, id_area, path, created_at")
       .single();
 
     if (insertErr) {

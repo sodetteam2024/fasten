@@ -3,13 +3,24 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useUser } from "@clerk/nextjs";
 import { supabase } from "@/lib/supabaseClient";
-import { Plus, Save, Image as ImageIcon, Trash2, Loader2, RefreshCw } from "lucide-react";
+import {
+  Plus,
+  Save,
+  Image as ImageIcon,
+  Trash2,
+  Loader2,
+  RefreshCw,
+} from "lucide-react";
 import CreateAreaModal from "@/components/CreateAreaModal";
+import { Button } from "@/components/ui/button";
 
 const AREAS_BUCKET = "areas";
 const MAX_PHOTOS = 6;
 const SIGNED_URL_TTL = 60 * 60; // 1 hora
 const AUTO_REFRESH_MS = 45 * 60 * 1000; // 45 min
+
+// ✅ VIEW: 1 foto por área (la más reciente)
+const AREAS_LAST_PHOTO_VIEW = "areas_foto_ultima";
 
 function money(v) {
   return `$${Number(v || 0).toLocaleString("es-CO")}`;
@@ -34,16 +45,16 @@ async function resolveStorageUrl(path) {
   return pub?.publicUrl || "";
 }
 
-async function insertAreaPhotoViaApi({ id_area, path, orden }) {
+async function insertAreaPhotoViaApi({ id_area, path }) {
   const res = await fetch("/api/areas-photos", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ id_area, path, orden }),
+    body: JSON.stringify({ id_area, path }), // ✅ sin orden
   });
 
   const json = await res.json();
   if (!res.ok) throw new Error(json?.error || "Error insertando en DB");
-  return json.row;
+  return json.row; // {id, id_area, path, created_at}
 }
 
 export default function AdminAreas() {
@@ -62,6 +73,8 @@ export default function AdminAreas() {
   const [creating, setCreating] = useState(false);
 
   const [photos, setPhotos] = useState([]);
+  const [loadingPhotos, setLoadingPhotos] = useState(false);
+
   const photosRef = useRef([]);
   useEffect(() => {
     photosRef.current = photos;
@@ -109,21 +122,24 @@ export default function AdminAreas() {
         return;
       }
 
+      setLoadingPhotos(true);
+
       const { data, error } = await supabase
         .from("areas_fotos")
-        .select("id, id_area, path, orden, created_at")
+        .select("id, id_area, path, created_at")
         .eq("id_area", areaId)
-        .order("orden", { ascending: true });
+        .order("created_at", { ascending: false })
+        .limit(MAX_PHOTOS);
 
       if (error) {
         console.error("Error cargando fotos:", error);
         setPhotos([]);
+        setLoadingPhotos(false);
         return;
       }
 
       const list = (data || []).slice(0, MAX_PHOTOS);
 
-      // ✅ Forzar refresh: limpiar cache de esos paths
       if (opts.bypassCache) {
         for (const p of list) {
           if (p?.path) urlCacheRef.current.delete(String(p.path));
@@ -132,13 +148,17 @@ export default function AdminAreas() {
 
       const mapped = await Promise.all(
         list.map(async (p) => {
-          const url = opts.bypassCache ? await resolveStorageUrl(p.path) : await cachedResolve(p.path);
+          const url = opts.bypassCache
+            ? await resolveStorageUrl(p.path)
+            : await cachedResolve(p.path);
+
           if (url) urlCacheRef.current.set(String(p.path), url);
           return { ...p, url, pending: false };
         })
       );
 
       setPhotos(mapped);
+      setLoadingPhotos(false);
     },
     [cachedResolve]
   );
@@ -186,22 +206,56 @@ export default function AdminAreas() {
         return;
       }
 
+      // 1) Áreas
       const { data: a, error: errAreas } = await supabase
         .from("areas")
-        .select("id, idunidad, nombre, estado, pricing_type, valor_hora, valor_fijo, max_horas_fijo, imagen_principal")
+        .select(
+          "id, idunidad, nombre, estado, pricing_type, valor_hora, valor_fijo, max_horas_fijo, imagen_principal"
+        )
         .eq("idunidad", perfilDb.id_unidad)
         .order("id", { ascending: true });
 
       if (errAreas) console.error(errAreas);
 
-      setAreas(a || []);
+      const baseAreas = a || [];
+
+      // 2) Última foto por área (miniatura lista)
+      const areaIds = baseAreas.map((x) => x.id);
+      let fotoMap = new Map();
+
+      if (areaIds.length > 0) {
+        const { data: ultimas, error: errUlt } = await supabase
+          .from(AREAS_LAST_PHOTO_VIEW)
+          .select("id_area, foto_path")
+          .in("id_area", areaIds);
+
+        if (errUlt) {
+          console.warn("No se pudieron cargar últimas fotos (view):", errUlt);
+        } else {
+          fotoMap = new Map(
+            (ultimas || []).map((f) => [String(f.id_area), f?.foto_path || null])
+          );
+        }
+      }
+
+      // 3) Hydrate miniaturas
+      const hydrated = await Promise.all(
+        baseAreas.map(async (area) => {
+          const lastPath = fotoMap.get(String(area.id)) || null;
+          const thumbPath = lastPath || area.imagen_principal || null; // ✅ preferir última foto
+          const thumbUrl = thumbPath ? await cachedResolve(thumbPath) : "";
+          return { ...area, _thumbPath: thumbPath, _thumbUrl: thumbUrl };
+        })
+      );
+
+      setAreas(hydrated);
       setLoading(false);
 
       const currentId = selected?.id;
-      const keep = (a || []).find((x) => String(x.id) === String(currentId));
+      const keep = hydrated.find((x) => String(x.id) === String(currentId));
 
       if (keep) await selectArea(keep);
-      else if ((a || []).length > 0) await selectArea(a[0]);
+      else if (hydrated.length > 0) await selectArea(hydrated[0]);
       else {
         setSelected(null);
         setForm(null);
@@ -211,9 +265,9 @@ export default function AdminAreas() {
 
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id]);
+  }, [user?.id, cachedResolve]);
 
-  // ✅ AUTO-REFRESH: usa photosRef para no usar "photos viejo"
+  // ✅ AUTO-REFRESH URLs galería (por si se vencen)
   useEffect(() => {
     if (!selected?.id) return;
 
@@ -236,44 +290,36 @@ export default function AdminAreas() {
     return () => clearInterval(t);
   }, [selected?.id]);
 
-  // ========= CREATE AREA (desde modal) =========
   const createArea = useCallback(
-    async (name) => {
+    async (payload) => {
       if (!canAdmin) throw new Error("Sin permisos.");
-      if (!perfil?.id_unidad) throw new Error("Perfil sin unidad.");
 
       setCreating(true);
       try {
-        const payload = {
-          idunidad: perfil.id_unidad,
-          nombre: name.trim(),
-          estado: "activa",
-          pricing_type: "por_hora",
-          valor_hora: 0,
-          valor_fijo: 0,
-          max_horas_fijo: 0,
-          imagen_principal: null,
-        };
+        const res = await fetch("/api/create-area", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
 
-        const { data, error } = await supabase
-          .from("areas")
-          .insert([payload])
-          .select("id, idunidad, nombre, estado, pricing_type, valor_hora, valor_fijo, max_horas_fijo, imagen_principal")
-          .single();
+        const json = await res.json();
+        if (!res.ok) throw new Error(json?.error || "No se pudo crear el área.");
 
-        if (error) {
-          console.error(error);
-          throw new Error("No se pudo crear el área. Revisa RLS/Policies.");
-        }
+        const data = json.area;
 
-        setAreas((prev) => [...prev, data]);
+        // agrega a lista y selecciona
+        setAreas((prev) => [...prev, { ...data, _thumbPath: null, _thumbUrl: "" }]);
         await selectArea(data);
+
+        return data; // ✅ importante para CreateAreaModal
       } finally {
         setCreating(false);
       }
     },
-    [canAdmin, perfil?.id_unidad, selectArea]
+    [canAdmin, selectArea]
   );
+
+
 
   // ========= SAVE AREA =========
   const saveArea = async () => {
@@ -315,11 +361,11 @@ export default function AdminAreas() {
     if (!selected?.id) return alert("Selecciona un área.");
     if (!files.length) return;
 
-    const remaining = Math.max(0, MAX_PHOTOS - photos.length);
+    const existing = photos.filter((p) => !p.pending).length;
+    const remaining = Math.max(0, MAX_PHOTOS - existing);
     const toUpload = files.slice(0, remaining);
-    if (!toUpload.length) return alert("Ya tienes 6 fotos en esta galería.");
 
-    const baseOrden = photos.filter((p) => !p.pending).length;
+    if (!toUpload.length) return alert("Ya tienes 6 fotos en esta galería.");
 
     toUpload.forEach((file, index) => {
       if (!file.type.startsWith("image/")) return;
@@ -327,9 +373,16 @@ export default function AdminAreas() {
       const tempId = `temp-${Date.now()}-${index}`;
       const previewUrl = URL.createObjectURL(file);
 
+      // ✅ ya no guardamos orden
       setPhotos((prev) => [
         ...prev,
-        { id: tempId, id_area: selected.id, path: null, orden: baseOrden + index, url: previewUrl, pending: true },
+        {
+          id: tempId,
+          id_area: selected.id,
+          path: null,
+          url: previewUrl,
+          pending: true,
+        },
       ]);
 
       (async () => {
@@ -351,11 +404,10 @@ export default function AdminAreas() {
             return;
           }
 
-          const orden = baseOrden + index;
-
+          // insertar en DB (sin orden)
           let row;
           try {
-            row = await insertAreaPhotoViaApi({ id_area: selected.id, path, orden });
+            row = await insertAreaPhotoViaApi({ id_area: selected.id, path });
           } catch (err) {
             console.error("API insert error:", err);
             alert(`Subió al bucket pero no guardó en DB: ${err?.message || "error"}`);
@@ -371,24 +423,33 @@ export default function AdminAreas() {
 
           URL.revokeObjectURL(previewUrl);
 
+          // reemplazar temp por real
           setPhotos((prev) =>
             prev.map((p) =>
               p.id === tempId
-                ? { ...p, id: row.id, id_area: row.id_area, path: row.path, orden: row.orden, url: signedUrl || p.url, pending: false }
+                ? {
+                  ...p,
+                  id: row.id,
+                  id_area: row.id_area,
+                  path: row.path,
+                  url: signedUrl || p.url,
+                  pending: false,
+                }
                 : p
             )
           );
 
-          const hasPrincipal = !!(form?.imagen_principal || selected?.imagen_principal);
-          if (!hasPrincipal && index === 0) {
-            const { error: upAreaErr } = await supabase.from("areas").update({ imagen_principal: path }).eq("id", selected.id);
+          // ✅ refrescar miniatura de lista con la última subida
+          setAreas((prev) =>
+            prev.map((a) =>
+              a.id === selected.id
+                ? { ...a, _thumbPath: path, _thumbUrl: signedUrl || a._thumbUrl }
+                : a
+            )
+          );
 
-            if (!upAreaErr) {
-              setForm((p) => ({ ...p, imagen_principal: path }));
-              setAreas((prev) => prev.map((a) => (a.id === selected.id ? { ...a, imagen_principal: path } : a)));
-              setSelected((prev) => (prev?.id === selected.id ? { ...prev, imagen_principal: path } : prev));
-            }
-          }
+          // ✅ IMPORTANTÍSIMO: recargar desde DB para asegurar que se vean TODAS
+          await loadAreaPhotos(selected.id, { bypassCache: true });
         } catch (err) {
           console.error("Error general subiendo imagen:", err);
           alert("Error inesperado al subir una imagen.");
@@ -406,7 +467,9 @@ export default function AdminAreas() {
     if (!confirm("¿Eliminar esta foto?")) return;
 
     if (!p.path && p.url?.startsWith("blob:")) {
-      try { URL.revokeObjectURL(p.url); } catch {}
+      try {
+        URL.revokeObjectURL(p.url);
+      } catch { }
       setPhotos((prev) => prev.filter((x) => x.id !== p.id));
       return;
     }
@@ -422,28 +485,54 @@ export default function AdminAreas() {
     if (rmErr) console.warn("No se pudo borrar del bucket:", rmErr);
 
     if (p.path) urlCacheRef.current.delete(String(p.path));
-    setPhotos((prev) => prev.filter((x) => x.id !== p.id));
 
-    if (form?.imagen_principal === p.path) {
-      const { error } = await supabase.from("areas").update({ imagen_principal: null }).eq("id", selected.id);
-      if (!error) {
-        setForm((x) => ({ ...x, imagen_principal: null }));
-        setAreas((prev) => prev.map((a) => (a.id === selected.id ? { ...a, imagen_principal: null } : a)));
-        setSelected((prev) => (prev?.id === selected.id ? { ...prev, imagen_principal: null } : prev));
-      }
+    // refresca galería desde DB (consistente)
+    if (selected?.id) {
+      await loadAreaPhotos(selected.id, { bypassCache: true });
+
+      // recalcula miniatura con la foto más reciente que quede
+      const current = photosRef.current || [];
+      const nextThumb = current.find((x) => x?.path)?.path || null;
+      const nextThumbUrl = nextThumb ? await resolveStorageUrl(nextThumb) : "";
+
+      setAreas((prev) =>
+        prev.map((a) =>
+          a.id === selected.id ? { ...a, _thumbPath: nextThumb, _thumbUrl: nextThumbUrl } : a
+        )
+      );
+    } else {
+      setPhotos((prev) => prev.filter((x) => x.id !== p.id));
     }
   };
 
   const refreshImagesNow = async () => {
     if (!selected?.id) return;
+
     await loadAreaPhotos(selected.id, { bypassCache: true });
+
+    const refreshed = await Promise.all(
+      areas.map(async (a) => {
+        const thumbPath = a?._thumbPath || a?.imagen_principal || null;
+        if (!thumbPath) return { ...a, _thumbUrl: "" };
+
+        urlCacheRef.current.delete(String(thumbPath));
+        const url = await resolveStorageUrl(thumbPath);
+        if (url) urlCacheRef.current.set(String(thumbPath), url);
+
+        return { ...a, _thumbPath: thumbPath, _thumbUrl: url || a._thumbUrl };
+      })
+    );
+
+    setAreas(refreshed);
   };
 
   if (!canAdmin) {
     return (
       <div className="rounded-xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 p-5">
         <p className="font-semibold mb-2">Áreas</p>
-        <p className="text-muted-foreground text-sm">No tienes permisos para administrar áreas.</p>
+        <p className="text-muted-foreground text-sm">
+          No tienes permisos para administrar áreas.
+        </p>
       </div>
     );
   }
@@ -487,14 +576,41 @@ export default function AdminAreas() {
                 <button
                   key={a.id}
                   onClick={() => selectArea(a)}
-                  className={`w-full text-left px-4 py-4 hover:bg-white/5 transition ${
-                    selected?.id === a.id ? "bg-purple-500/10" : ""
-                  }`}
+                  className={`w-full text-left px-4 py-4 hover:bg-white/5 transition ${selected?.id === a.id ? "bg-purple-500/10" : ""
+                    }`}
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-semibold">{a.nombre}</p>
-                      <p className="text-xs text-muted-foreground">#{a.id} · {a.estado}</p>
+                  <div className="flex items-center gap-3">
+                    <div className="h-12 w-12 rounded-xl overflow-hidden border border-white/10 bg-black/20 flex items-center justify-center flex-shrink-0">
+                      {a._thumbUrl ? (
+                        <img
+                          src={a._thumbUrl}
+                          alt={`foto ${a.nombre}`}
+                          className="h-full w-full object-cover"
+                          draggable={false}
+                          onError={async (e) => {
+                            const p = a?._thumbPath;
+                            if (!p) return;
+                            urlCacheRef.current.delete(String(p));
+                            const fresh = await resolveStorageUrl(p);
+                            if (fresh) {
+                              urlCacheRef.current.set(String(p), fresh);
+                              e.currentTarget.src = fresh;
+                              setAreas((prev) =>
+                                prev.map((x) => (x.id === a.id ? { ...x, _thumbUrl: fresh } : x))
+                              );
+                            }
+                          }}
+                        />
+                      ) : (
+                        <ImageIcon className="h-5 w-5 text-white/40" />
+                      )}
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold truncate">{a.nombre}</p>
+                      <p className="text-xs text-muted-foreground">
+                        #{a.id} · {a.estado}
+                      </p>
                     </div>
 
                     <span className="text-[11px] px-2 py-1 rounded-full bg-white/10">
@@ -595,7 +711,9 @@ export default function AdminAreas() {
                 </div>
 
                 <div className="md:col-span-2">
-                  <label className="text-xs text-muted-foreground">Máx horas para fijo (solo si es fijo)</label>
+                  <label className="text-xs text-muted-foreground">
+                    Máx horas para fijo (solo si es fijo)
+                  </label>
                   <input
                     type="number"
                     value={form.max_horas_fijo}
@@ -606,12 +724,9 @@ export default function AdminAreas() {
               </div>
 
               {/* GALERÍA */}
-              <div className="mt-6">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    <ImageIcon className="h-4 w-4" />
-                    <p className="font-semibold">Galería (máx {MAX_PHOTOS})</p>
-                  </div>
+              <div className="mt-4">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-sm font-semibold">Galería (máx 6)</h4>
 
                   <div className="flex items-center gap-2">
                     <input
@@ -622,82 +737,83 @@ export default function AdminAreas() {
                       className="hidden"
                       onChange={onPickPhotos}
                     />
-                    <button
+
+                    <Button
                       type="button"
+                      size="sm"
+                      variant="secondary"
                       onClick={() => fileInputRef.current?.click()}
-                      className="inline-flex items-center gap-2 rounded-xl bg-white/10 px-3 py-2 text-xs font-semibold hover:bg-white/15 transition disabled:opacity-70"
-                      disabled={uploading || photos.length >= MAX_PHOTOS}
+                      disabled={uploading || photos.filter((p) => !p.pending).length >= MAX_PHOTOS}
                     >
-                      {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-                      Añadir fotos
-                    </button>
+                      {uploading ? (
+                        <span className="inline-flex items-center gap-2">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Subiendo...
+                        </span>
+                      ) : (
+                        <>
+                          <Plus className="h-4 w-4 mr-2" />
+                          Añadir fotos
+                        </>
+                      )}
+                    </Button>
                   </div>
                 </div>
 
-                <p className="mt-2 text-xs text-muted-foreground">
-                  Fotos actuales: {photos.length} / {MAX_PHOTOS}
+                <p className="text-xs text-muted-foreground mb-3">
+                  Fotos actuales: {photos.filter((p) => !p.pending).length} / {MAX_PHOTOS}
                 </p>
 
-                {photos.length === 0 ? (
-                  <div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-4 text-sm text-muted-foreground">
+                {loadingPhotos ? (
+                  <div className="text-sm text-muted-foreground">Cargando fotos...</div>
+                ) : photos.length === 0 ? (
+                  <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
                     No hay fotos todavía. Sube hasta 6.
                   </div>
                 ) : (
-                  <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-3">
-                    {photos.map((p) => (
-                      <div key={p.id} className="relative rounded-xl overflow-hidden border border-white/10 bg-black/20">
-                        <div className="aspect-[4/3] bg-black/40">
-                          <img
-                            src={p.url}
-                            alt="foto área"
-                            className="h-full w-full object-cover"
-                            draggable={false}
-                            onError={async (e) => {
-                              if (!p?.path) return;
-                              const fresh = await resolveStorageUrl(p.path);
-                              if (fresh) {
-                                urlCacheRef.current.set(String(p.path), fresh);
-                                e.currentTarget.src = fresh;
-                                setPhotos((prev) => prev.map((x) => (x.id === p.id ? { ...x, url: fresh } : x)));
-                              }
-                            }}
-                          />
-                        </div>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                    {photos.slice(0, MAX_PHOTOS).map((photo) => (
+                      <div
+                        key={photo.id}
+                        className="relative aspect-[4/3] rounded-lg overflow-hidden border border-white/10 bg-black/10"
+                      >
+                        <img
+                          src={photo.url}
+                          alt="Foto área"
+                          className="w-full h-full object-cover"
+                          draggable={false}
+                          onError={async (e) => {
+                            if (!photo?.path) return;
+                            const fresh = await resolveStorageUrl(photo.path);
+                            if (fresh) e.currentTarget.src = fresh;
+                          }}
+                        />
 
-                        {p.pending && (
-                          <div className="absolute inset-x-0 bottom-0 bg-black/60 px-2 py-1 text-[10px] text-white text-center">
-                            Subiendo...
-                          </div>
-                        )}
-
-                        <div className="flex items-center justify-between p-2">
-                          <span className="text-[11px] text-muted-foreground truncate">{p.path || "pendiente..."}</span>
+                        <div className="absolute inset-x-0 bottom-0 p-2 flex justify-end">
                           <button
                             type="button"
-                            onClick={() => removePhoto(p)}
-                            className="p-2 rounded-lg hover:bg-white/10 disabled:opacity-60"
+                            onClick={() => removePhoto(photo)}
+                            className="inline-flex items-center gap-2 rounded-lg bg-black/55 text-white px-2 py-1 text-xs hover:bg-black/70 transition disabled:opacity-60"
+                            disabled={photo.pending}
                             title="Eliminar"
-                            disabled={p.pending}
                           >
-                            <Trash2 className="h-4 w-4 text-rose-400" />
+                            <Trash2 className="h-3.5 w-3.5" />
                           </button>
                         </div>
+
+                        {photo.pending && (
+                          <div className="absolute inset-0 bg-black/35 flex items-center justify-center">
+                            <Loader2 className="h-6 w-6 text-white animate-spin" />
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
                 )}
 
-                <div className="mt-4 text-xs text-muted-foreground">
-                  {form.pricing_type === "fijo" ? (
-                    <>
-                      Precio fijo: <b className="text-foreground">{money(form.valor_fijo)}</b> · Máx horas:{" "}
-                      <b className="text-foreground">{safeInt(form.max_horas_fijo)}</b>
-                    </>
-                  ) : (
-                    <>
-                      Precio por hora: <b className="text-foreground">{money(form.valor_hora)}</b>
-                    </>
-                  )}
+                <div className="mt-3 text-xs text-muted-foreground">
+                  Precio por hora:{" "}
+                  <span className="font-semibold">{money(form.valor_hora)}</span>
                 </div>
               </div>
             </>
