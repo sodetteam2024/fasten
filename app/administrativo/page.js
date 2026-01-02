@@ -14,6 +14,8 @@ import {
   MapPinned,
   ClipboardCheck,
   ChevronDown,
+  Settings,
+  BadgeCheck,
 } from "lucide-react";
 
 import RegistrarUsuarioForm from "@/components/RegistrarUsuarioForm";
@@ -23,31 +25,36 @@ import UsuariosActivos from "@/components/UsuariosActivos";
 import AdminAreas from "@/components/AdminAreas";
 import AdminReservations from "@/components/AdminReservations";
 
+// ✅ NUEVOS: Pagos admin
+import AdminPagosConfig from "@/components/AdminPagosConfig";
+import AdminPagosAprobar from "@/components/AdminPagosAprobar";
+
 export default function PanelAdministrativo() {
   // Grupo abierto (accordion simple)
-  const [openGroup, setOpenGroup] = useState("usuarios"); // "usuarios" | "reservas" | null
+  const [openGroup, setOpenGroup] = useState("usuarios"); // "usuarios" | "reservas" | "pagos" | null
 
   // Submódulos activos
   const [activeUserSub, setActiveUserSub] = useState("activos"); // "activos" | "registrar" | "baneados"
   const [activeReservaSub, setActiveReservaSub] = useState("areas"); // "areas" | "reservas"
+  const [activePagosSub, setActivePagosSub] = useState("aprobar"); // "aprobar" | "config"
 
-  // Helpers
   const toggleGroup = (groupName) => {
     setOpenGroup((prev) => {
       const next = prev === groupName ? null : groupName;
 
       if (next === "reservas") setActiveReservaSub("areas");
       if (next === "usuarios") setActiveUserSub("activos");
+      if (next === "pagos") setActivePagosSub("aprobar");
 
       return next;
     });
   };
 
-
   const itemClass = (isActive) =>
-    `flex items-center gap-2 transition ${isActive
-      ? "text-purple-500 font-semibold"
-      : "text-muted-foreground hover:text-purple-400"
+    `flex items-center gap-2 transition ${
+      isActive
+        ? "text-purple-500 font-semibold"
+        : "text-muted-foreground hover:text-purple-400"
     }`;
 
   return (
@@ -103,8 +110,9 @@ export default function PanelAdministrativo() {
                   </div>
 
                   <ChevronDown
-                    className={`h-4 w-4 text-muted-foreground transition ${openGroup === "usuarios" ? "rotate-180" : ""
-                      }`}
+                    className={`h-4 w-4 text-muted-foreground transition ${
+                      openGroup === "usuarios" ? "rotate-180" : ""
+                    }`}
                   />
                 </button>
 
@@ -138,7 +146,7 @@ export default function PanelAdministrativo() {
               </div>
 
               {/* =======================
-                  Grupo Reservas (desplegable) ✅ nuevo
+                  Grupo Reservas (desplegable)
                   ======================= */}
               <div>
                 <button
@@ -152,8 +160,9 @@ export default function PanelAdministrativo() {
                   </div>
 
                   <ChevronDown
-                    className={`h-4 w-4 text-muted-foreground transition ${openGroup === "reservas" ? "rotate-180" : ""
-                      }`}
+                    className={`h-4 w-4 text-muted-foreground transition ${
+                      openGroup === "reservas" ? "rotate-180" : ""
+                    }`}
                   />
                 </button>
 
@@ -178,13 +187,49 @@ export default function PanelAdministrativo() {
                 )}
               </div>
 
-              {/* Pagos */}
-              <button className="flex items-center gap-2 text-muted-foreground hover:text-purple-400 transition">
-                <CreditCard className="h-4 w-4" />
-                Pagos
-              </button>
+              {/* =======================
+                  Grupo Pagos (desplegable) ✅ NUEVO
+                  ======================= */}
+              <div>
+                <button
+                  type="button"
+                  onClick={() => toggleGroup("pagos")}
+                  className="w-full flex items-center justify-between"
+                >
+                  <div className="flex items-center gap-2 font-semibold">
+                    <CreditCard className="h-4 w-4" />
+                    <span>Pagos</span>
+                  </div>
 
-              {/* Visitas */}
+                  <ChevronDown
+                    className={`h-4 w-4 text-muted-foreground transition ${
+                      openGroup === "pagos" ? "rotate-180" : ""
+                    }`}
+                  />
+                </button>
+
+                {openGroup === "pagos" && (
+                  <div className="ml-5 mt-2 border-l border-black/10 dark:border-white/10 pl-3 space-y-2 text-xs">
+                    <button
+                      onClick={() => setActivePagosSub("aprobar")}
+                      className={itemClass(activePagosSub === "aprobar")}
+                    >
+                      <BadgeCheck className="h-3 w-3" />
+                      Pagos por aprobar
+                    </button>
+
+                    <button
+                      onClick={() => setActivePagosSub("config")}
+                      className={itemClass(activePagosSub === "config")}
+                    >
+                      <Settings className="h-3 w-3" />
+                      Configuración
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Visitas (placeholder) */}
               <button className="flex items-center gap-2 text-muted-foreground hover:text-purple-400 transition">
                 <Users className="h-4 w-4" />
                 Visitas
@@ -207,8 +252,7 @@ export default function PanelAdministrativo() {
                   <div className="rounded-xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 p-5">
                     <p className="font-semibold mb-2">Usuarios baneados</p>
                     <p className="text-muted-foreground text-sm">
-                      Aquí aparecerán los usuarios marcados como
-                      inactivos/restringidos.
+                      Aquí aparecerán los usuarios marcados como inactivos/restringidos.
                     </p>
                   </div>
                 )}
@@ -220,6 +264,14 @@ export default function PanelAdministrativo() {
               <>
                 {activeReservaSub === "areas" && <AdminAreas />}
                 {activeReservaSub === "reservas" && <AdminReservations />}
+              </>
+            )}
+
+            {/* Render de Pagos ✅ NUEVO */}
+            {openGroup === "pagos" && (
+              <>
+                {activePagosSub === "aprobar" && <AdminPagosAprobar />}
+                {activePagosSub === "config" && <AdminPagosConfig />}
               </>
             )}
 
